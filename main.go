@@ -91,13 +91,13 @@ func GetBucket(bucket string) *s3.Bucket {
 }
 
 // Ls lists directorys or keys under a prefix
-func Ls(s3Uri string) {
+func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool) {
 	bucket, prefix := parseS3Uri(s3Uri)
 	b := GetBucket(bucket)
 
 	var ch <-chan s3.Key
-	if *lsRecurse {
-		ch = s3wrapper.ListRecurse(b, prefix, *lsSearchDepth)
+	if isRecursive {
+		ch = s3wrapper.ListRecurse(b, prefix, searchDepth)
 	} else {
 		ch = s3wrapper.ListWithCommonPrefixes(b, prefix)
 	}
@@ -107,13 +107,13 @@ func Ls(s3Uri string) {
 			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
 		} else {
 			var size string
-			if *humanReadable {
+			if isHumanReadable {
 				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
 			} else {
 				size = fmt.Sprintf("%10d", k.Size)
 			}
 			date := ""
-			if *withDate {
+			if includeDate {
 				date = " " + k.LastModified
 			}
 			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
@@ -123,7 +123,7 @@ func Ls(s3Uri string) {
 }
 
 // Del deletes a set of prefixes(s3 keys or partial keys
-func Del(prefixes []string) {
+func Del(prefixes []string, searchDepth int, isRecursive bool) {
 	if len(*delPrefixes) == 0 {
 		fmt.Printf("No prefixes provided\n Usage: fasts3 del <prefix>")
 		return
@@ -148,7 +148,7 @@ func Del(prefixes []string) {
 				if keyExists {
 					keys <- prefix
 				} else if *delRecurse {
-					for key := range s3wrapper.ListRecurse(b, prefix, *delSearchDepth) {
+					for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
 						keys <- key.Key
 					}
 
@@ -225,9 +225,9 @@ secret_key=<secret_key>`
 func main() {
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case "ls":
-		Ls(*lsS3Uri)
+		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate)
 	case "del":
-		Del(*delPrefixes)
+		Del(*delPrefixes, *lsSearchDepth, *delRecurse)
 	case "init":
 		Init()
 	}
