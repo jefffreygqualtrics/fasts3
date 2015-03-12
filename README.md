@@ -1,9 +1,11 @@
+#FastS3 utility
+
+Fast s3 utility is a faster version of s3cmd's ls and del functions ideal for listing and deleting buckets containing millions of keys.
+
 #Installation
 
 ```bash
-mkdir -p $GOPATH/src/github.com/MobileAppTracking/
-cd $GOPATH/src/github.com/MobileAppTracking/
-git clone git@github.com:MobileAppTracking/gosquid.git
-cd gosquid/utility/fasts3/
-go build fasts3.go
+go get github.com/MobileAppTracking/fasts3
+cd $GOPATH/src/github.com/MobileAppTracking/fasts3
+go build
 ```
