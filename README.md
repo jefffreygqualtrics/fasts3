@@ -23,6 +23,7 @@ secret_key=<secret_key>
 fill in the template file with your s3 credentials
 
 alternatively you can set these environment variables:
-*AWS_ACCESS_KEY_ID*
-*AWS_SECRET_ACCESS_KEY*
-
+```bash
+export AWS_ACCESS_KEY_ID=<access_key>
+export AWS_SECRET_ACCESS_KEY=<secret_key>
+```
