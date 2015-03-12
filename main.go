@@ -59,7 +59,7 @@ var (
 	withDate      = ls.Flag("with-date", "include the last modified date.").Short('d').Bool()
 
 	del            = app.Command("del", "Delete s3 keys")
-	delPrefixes    = S3List(del.Arg("prefixes", "partial s3 uri to del all keys under it"))
+	delPrefixes    = S3List(del.Arg("prefixes", "1 or more partial s3 uris to delete delimited by space"))
 	delRecurse     = del.Flag("recursive", "Delete all keys with prefix").Short('r').Bool()
 	delSearchDepth = del.Flag("search-depth", "search depth to search for work.").Default("0").Int()
 

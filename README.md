@@ -55,7 +55,7 @@ Commands:
 
 #####ls
 ```
-fasts3 [<flags>] ls [<flags>] <s3uri>
+usage: fasts3 [<flags>] ls [<flags>] <s3uri>
 
 List s3 prefixes.
 
@@ -68,6 +68,7 @@ Flags:
 
 Args:
   <s3uri>  paritial s3 uri to list, ex: s3://mary/had/a/little/lamb/
+
 ```
 
 #####del
@@ -82,5 +83,6 @@ Flags:
   --search-depth=0  search depth to search for work.
 
 Args:
-  [<prefixes>]  partial s3 uri to del all keys under it
+  [<prefixes>]  1 or more partial s3 uris to delete delimited by space
+
 ```
