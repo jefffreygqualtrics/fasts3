@@ -53,7 +53,7 @@ Commands:
 
 ```
 
-##ls
+#####ls
 ```
 fasts3 [<flags>] ls [<flags>] <s3uri>
 
@@ -70,7 +70,7 @@ Args:
   <s3uri>  paritial s3 uri to list, ex: s3://mary/had/a/little/lamb/
 ```
 
-##del
+#####del
 ```
 usage: fasts3 [<flags>] del [<flags>] [<prefixes>]
 
