@@ -13,8 +13,8 @@ import (
 
 	"github.com/AdRoll/goamz/aws"
 	"github.com/AdRoll/goamz/s3"
-	"github.com/MobileAppTracking/fasts3/awswrapper"
-	"github.com/MobileAppTracking/fasts3/s3wrapper"
+	"github.com/TuneOSS/fasts3/awswrapper"
+	"github.com/TuneOSS/fasts3/s3wrapper"
 	"github.com/alecthomas/kingpin"
 	"github.com/dustin/go-humanize"
 )
