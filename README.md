@@ -71,28 +71,6 @@ Args:
 
 ```
 
-######examples:
-
-```bash
-fasts3 ls s3://mybucket/ # lists top level directories and keys
-fasts3 ls -r s3://mybucket/ # lists all keys in the bucket
-fasts3 ls -r --search-depth 1 s3://mybucket/ # lists all keys in the bucket using the directories 1 level down to thread
-```
-
-######A note on search depth
-Many times you know the structure of your s3 bucket, this can be used to optimize listings. Say you have a structure like so:
-```bash
-fasts3 ls s3://mybuck/logs/
-
-DIR s3://mybuck/logs/2010/
-DIR s3://mybuck/logs/2012/
-DIR s3://mybuck/logs/2013/
-DIR s3://mybuck/logs/2014/
-DIR s3://mybuck/logs/2015/
-```
-
-doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories it's own thread increasing throughput.
-
 #####del
 ```
 usage: fasts3 [<flags>] del [<flags>] [<prefixes>]
@@ -109,8 +87,28 @@ Args:
 
 ```
 
-######examples
+####A note on search depth
+Many times you know the structure of your s3 bucket, this can be used to optimize listings. Say you have a structure like so:
 ```bash
+fasts3 ls s3://mybuck/logs/
+
+DIR s3://mybuck/logs/2010/
+DIR s3://mybuck/logs/2012/
+DIR s3://mybuck/logs/2013/
+DIR s3://mybuck/logs/2014/
+DIR s3://mybuck/logs/2015/
+```
+
+doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories it's own thread increasing throughput.
+
+####Examples
+```bash
+# ls
+fasts3 ls s3://mybucket/ # lists top level directories and keys
+fasts3 ls -r s3://mybucket/ # lists all keys in the bucket
+fasts3 ls -r --search-depth 1 s3://mybucket/ # lists all keys in the bucket using the directories 1 level down to thread
+
+# del
 fasts3 del -r s3://mybuck/logs/ # deletes all keys in the prefix
 fasts3 del s3://mybuck/logs/2015/01/12/api.log.201501122359.gz # deletes single key
 fasts3 del $(fasts3 ls s3://mybuck/logs/2015/01/12 | awk -F " " '/api.log/{print $2}') # delete all keys that have "api.log" in them
