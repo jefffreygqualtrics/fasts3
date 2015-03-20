@@ -91,8 +91,10 @@ func GetS3Service(bucket string) *s3.S3 {
 		log.Fatalln(err)
 
 	}
-	if *loc.LocationConstraint != "us-east-1" {
-		service = s3.New(auth, *loc.LocationConstraint, nil)
+	if loc.LocationConstraint != nil {
+		if *loc.LocationConstraint != "us-east-1" {
+			service = s3.New(auth, *loc.LocationConstraint, nil)
+		}
 	}
 	return service
 }
@@ -111,19 +113,19 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 
 	for k := range ch {
 		if *k.Size < 0 {
-			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
+			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, *k.Key)
 		} else {
 			var size string
 			if isHumanReadable {
 				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(*k.Size)))
 			} else {
-				size = fmt.Sprintf("%10d", k.Size)
+				size = fmt.Sprintf("%10d", *k.Size)
 			}
 			date := ""
 			if includeDate {
 				date = " " + timeFormat(k.LastModified)
 			}
-			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
+			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, *k.Key)
 		}
 	}
 

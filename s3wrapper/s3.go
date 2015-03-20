@@ -81,20 +81,18 @@ func Exists(s3Service *s3.S3, bucket, key string) bool {
 func List(s3Service *s3.S3, bucket string, prefix string, delimiter string) <-chan *s3.ListObjectsOutput {
 	ch := make(chan *s3.ListObjectsOutput, 100)
 	go func(pfix string, del string) {
+		listReq := s3.ListObjectsRequest{
+			Bucket:    aws.String(bucket),
+			Delimiter: aws.String(delimiter),
+			MaxKeys:   aws.Integer(1000),
+			Marker:    nil,
+			Prefix:    aws.String(pfix)}
 		defer close(ch)
 		isTruncated := true
-		nextMarker := ""
 		for isTruncated {
 			attempts := 0
 			for {
 				attempts++
-
-				listReq := s3.ListObjectsRequest{
-					Bucket:    aws.String(bucket),
-					Delimiter: aws.String(delimiter),
-					MaxKeys:   aws.Integer(1000),
-					Marker:    aws.String(nextMarker),
-					Prefix:    aws.String(pfix)}
 				res, err := s3Service.ListObjects(&listReq)
 				if err != nil {
 					if err.Error() == "runtime error: index out of range" {
@@ -107,7 +105,7 @@ func List(s3Service *s3.S3, bucket string, prefix string, delimiter string) <-ch
 					time.Sleep(time.Second * 3)
 				} else {
 					ch <- res
-					nextMarker = *res.NextMarker
+					listReq.Marker = res.NextMarker
 					isTruncated = *res.IsTruncated
 					break
 				}
@@ -116,37 +114,6 @@ func List(s3Service *s3.S3, bucket string, prefix string, delimiter string) <-ch
 	}(prefix, delimiter)
 	return ch
 }
-
-//func Put(bucket *s3.Bucket, key string, contents []byte, contentType string, permissions s3.ACL, options s3.Options) error {
-//	attempts := 0
-//	for {
-//		attempts++
-//		err := bucket.Put(key, contents, contentType, permissions, options)
-//		if err == nil {
-//			return nil
-//		}
-//		if attempts >= maxRetries && err != nil {
-//			return err
-//		}
-//
-//		time.Sleep(time.Second * 3)
-//	}
-//}
-//
-//func Get(bucket *s3.Bucket, key string) ([]byte, error) {
-//	attempts := 0
-//	for {
-//		attempts++
-//		buff, err := bucket.Get(key)
-//		if err == nil {
-//			return buff, nil
-//		}
-//		if attempts >= maxRetries && err != nil {
-//			return nil, err
-//		}
-//	}
-//
-//}
 
 func toDeleteStruct(keys []string) *s3.Delete {
 	objs := make([]s3.ObjectIdentifier, 0)
