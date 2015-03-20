@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AdRoll/goamz/s3"
+	"github.com/awslabs/aws-sdk-go/aws"
+	"github.com/awslabs/aws-sdk-go/gen/s3"
 )
 
 const defaultDelimiter string = "/"
@@ -40,16 +41,16 @@ func StripS3Path(key string) string {
 
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
-func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) []listWork {
+func getListWork(s3Service *s3.S3, bucket string, prefix string, searchDepth int) []listWork {
 	currentPrefixes := []listWork{listWork{prefix, ""}}
 	results := []listWork{}
 	for i := 0; i < searchDepth; i++ {
 		newPrefixes := []listWork{}
 		for _, pfx := range currentPrefixes {
-			for res := range List(bucket, pfx.prefix, defaultDelimiter) {
+			for res := range List(s3Service, bucket, pfx.prefix, defaultDelimiter) {
 				if len(res.CommonPrefixes) != 0 {
 					for _, newPfx := range res.CommonPrefixes {
-						newPrefixes = append(newPrefixes, listWork{newPfx, ""})
+						newPrefixes = append(newPrefixes, listWork{*newPfx.Prefix, ""})
 					}
 					// catches the case where keys and common prefixes live in the same place
 					if len(res.Contents) > 0 {
@@ -68,9 +69,17 @@ func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) []listWork {
 	return results
 }
 
+func Exists(s3Service *s3.S3, bucket, key string) bool {
+	c := 0
+	for resp := range List(s3Service, bucket, key, "/") {
+		c += len(resp.Contents)
+	}
+	return c > 0
+}
+
 // List function with retry and support for listing all keys in a prefix
-func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListResp {
-	ch := make(chan *s3.ListResp, 100)
+func List(s3Service *s3.S3, bucket string, prefix string, delimiter string) <-chan *s3.ListObjectsOutput {
+	ch := make(chan *s3.ListObjectsOutput, 100)
 	go func(pfix string, del string) {
 		defer close(ch)
 		isTruncated := true
@@ -79,7 +88,14 @@ func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListRes
 			attempts := 0
 			for {
 				attempts++
-				res, err := bucket.List(pfix, del, nextMarker, 1000)
+
+				listReq := s3.ListObjectsRequest{
+					Bucket:    aws.String(bucket),
+					Delimiter: aws.String(delimiter),
+					MaxKeys:   aws.Integer(1000),
+					Marker:    aws.String(nextMarker),
+					Prefix:    aws.String(pfix)}
+				res, err := s3Service.ListObjects(&listReq)
 				if err != nil {
 					if err.Error() == "runtime error: index out of range" {
 						break
@@ -91,12 +107,8 @@ func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListRes
 					time.Sleep(time.Second * 3)
 				} else {
 					ch <- res
-					if len(res.Contents) > 0 {
-						nextMarker = res.Contents[len(res.Contents)-1].Key
-					} else if len(res.CommonPrefixes) > 0 {
-						nextMarker = res.CommonPrefixes[len(res.CommonPrefixes)-1]
-					}
-					isTruncated = res.IsTruncated
+					nextMarker = *res.NextMarker
+					isTruncated = *res.IsTruncated
 					break
 				}
 			}
@@ -105,56 +117,57 @@ func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListRes
 	return ch
 }
 
-func Put(bucket *s3.Bucket, key string, contents []byte, contentType string, permissions s3.ACL, options s3.Options) error {
-	attempts := 0
-	for {
-		attempts++
-		err := bucket.Put(key, contents, contentType, permissions, options)
-		if err == nil {
-			return nil
-		}
-		if attempts >= maxRetries && err != nil {
-			return err
-		}
+//func Put(bucket *s3.Bucket, key string, contents []byte, contentType string, permissions s3.ACL, options s3.Options) error {
+//	attempts := 0
+//	for {
+//		attempts++
+//		err := bucket.Put(key, contents, contentType, permissions, options)
+//		if err == nil {
+//			return nil
+//		}
+//		if attempts >= maxRetries && err != nil {
+//			return err
+//		}
+//
+//		time.Sleep(time.Second * 3)
+//	}
+//}
+//
+//func Get(bucket *s3.Bucket, key string) ([]byte, error) {
+//	attempts := 0
+//	for {
+//		attempts++
+//		buff, err := bucket.Get(key)
+//		if err == nil {
+//			return buff, nil
+//		}
+//		if attempts >= maxRetries && err != nil {
+//			return nil, err
+//		}
+//	}
+//
+//}
 
-		time.Sleep(time.Second * 3)
-	}
-}
-
-func Get(bucket *s3.Bucket, key string) ([]byte, error) {
-	attempts := 0
-	for {
-		attempts++
-		buff, err := bucket.Get(key)
-		if err == nil {
-			return buff, nil
-		}
-		if attempts >= maxRetries && err != nil {
-			return nil, err
-		}
-	}
-
-}
-
-func toDeleteStruct(keys []string) s3.Delete {
-	objs := make([]s3.Object, 0)
+func toDeleteStruct(keys []string) *s3.Delete {
+	objs := make([]s3.ObjectIdentifier, 0)
 	for _, key := range keys {
 		if key != "" {
-			objs = append(objs, s3.Object{Key: strings.TrimSpace(key)})
+			objs = append(objs, s3.ObjectIdentifier{Key: aws.String(strings.TrimSpace(key))})
 		}
 	}
-	return s3.Delete{false, objs}
+	return &s3.Delete{Objects: objs, Quiet: aws.Boolean(false)}
 }
 
 // DeleteMulti  deletes multiple keys
-func DeleteMulti(bucket *s3.Bucket, keys []string) error {
+func DeleteMulti(s3Service *s3.S3, bucket string, keys []string) (error, *s3.DeleteObjectsOutput) {
 	attempts := 0
+	var resp *s3.DeleteObjectsOutput
 	for {
 		attempts++
-		err := bucket.DelMulti(toDeleteStruct(keys))
+		resp, err := s3Service.DeleteObjects(&s3.DeleteObjectsRequest{Bucket: aws.String(bucket), Delete: toDeleteStruct(keys)})
 		if err != nil {
 			if attempts >= maxRetries {
-				return err
+				return err, resp
 			}
 
 			time.Sleep(time.Second * 3)
@@ -162,17 +175,17 @@ func DeleteMulti(bucket *s3.Bucket, keys []string) error {
 			break
 		}
 	}
-	return nil
+	return nil, resp
 }
 
 // lists a prefix and includes common prefixes
-func ListWithCommonPrefixes(bucket *s3.Bucket, prefix string) <-chan s3.Key {
-	ch := make(chan s3.Key, 1000)
+func ListWithCommonPrefixes(s3Service *s3.S3, bucket string, prefix string) <-chan s3.Object {
+	ch := make(chan s3.Object, 1000)
 	go func() {
 		defer close(ch)
-		for listResp := range List(bucket, prefix, defaultDelimiter) {
+		for listResp := range List(s3Service, bucket, prefix, defaultDelimiter) {
 			for _, prefix := range listResp.CommonPrefixes {
-				ch <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
+				ch <- s3.Object{Key: prefix.Prefix, Size: aws.Long(-1), Owner: &s3.Owner{}}
 			}
 			for _, key := range listResp.Contents {
 				ch <- key
@@ -209,17 +222,17 @@ func partition(list []listWork, partitionSize int) [][]listWork {
 }
 
 // listRecurse lists prefix in parallel using searchDepth to search for routine's work
-func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
-	ch := make(chan s3.Key, 2000)
+func ListRecurse(s3Service *s3.S3, bucket string, prefix string, searchDepth int) <-chan s3.Object {
+	ch := make(chan s3.Object, 2000)
 	var wg sync.WaitGroup
 
-	workPartitions := partition(getListWork(bucket, prefix, searchDepth), numListRoutines)
+	workPartitions := partition(getListWork(s3Service, bucket, prefix, searchDepth), numListRoutines)
 	for _, partition := range workPartitions {
 		wg.Add(1)
 		go func(work []listWork) {
 			defer wg.Done()
 			for _, workItem := range work {
-				for res := range List(bucket, workItem.prefix, workItem.delimiter) {
+				for res := range List(s3Service, bucket, workItem.prefix, workItem.delimiter) {
 					for _, c := range res.Contents {
 						ch <- c
 					}

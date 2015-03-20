@@ -10,14 +10,17 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/AdRoll/goamz/aws"
-	"github.com/AdRoll/goamz/s3"
 	"github.com/TuneOSS/fasts3/awswrapper"
 	"github.com/TuneOSS/fasts3/s3wrapper"
 	"github.com/alecthomas/kingpin"
+	"github.com/awslabs/aws-sdk-go/aws"
+	"github.com/awslabs/aws-sdk-go/gen/s3"
 	"github.com/dustin/go-humanize"
 )
+
+const layout = "2006-01-02 15:04:05"
 
 type s3List []string
 
@@ -66,6 +69,9 @@ var (
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
 
+func timeFormat(t time.Time) string {
+	return t.Format(layout)
+}
 func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	s3UriParts := strings.Split(s3Uri, "/")
 	prefix = strings.Join(s3UriParts[3:], "/")
@@ -73,48 +79,49 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	return
 }
 
-func GetBucket(bucket string) *s3.Bucket {
+func GetS3Service(bucket string) *s3.S3 {
 	err, auth := awswrapper.GetAwsAuth()
 	if err != nil {
 		log.Fatalln(err)
 	}
-	b := s3.New(auth, aws.USEast).Bucket(bucket)
-	loc, err := b.Location()
+	service := s3.New(auth, "us-east-1", nil)
+
+	loc, err := service.GetBucketLocation(&s3.GetBucketLocationRequest{Bucket: aws.String(bucket)})
 	if err != nil {
 		log.Fatalln(err)
 
 	}
-	if aws.GetRegion(loc) != aws.USEast {
-		b = s3.New(auth, aws.GetRegion(loc)).Bucket(bucket)
+	if *loc.LocationConstraint != "us-east-1" {
+		service = s3.New(auth, *loc.LocationConstraint, nil)
 	}
-	return b
+	return service
 }
 
 // Ls lists directorys or keys under a prefix
 func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool) {
 	bucket, prefix := parseS3Uri(s3Uri)
-	b := GetBucket(bucket)
+	s3Service := GetS3Service(bucket)
 
-	var ch <-chan s3.Key
+	var ch <-chan s3.Object
 	if isRecursive {
-		ch = s3wrapper.ListRecurse(b, prefix, searchDepth)
+		ch = s3wrapper.ListRecurse(s3Service, bucket, prefix, searchDepth)
 	} else {
-		ch = s3wrapper.ListWithCommonPrefixes(b, prefix)
+		ch = s3wrapper.ListWithCommonPrefixes(s3Service, bucket, prefix)
 	}
 
 	for k := range ch {
-		if k.Size < 0 {
+		if *k.Size < 0 {
 			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
 		} else {
 			var size string
 			if isHumanReadable {
-				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
+				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(*k.Size)))
 			} else {
 				size = fmt.Sprintf("%10d", k.Size)
 			}
 			date := ""
 			if includeDate {
-				date = " " + k.LastModified
+				date = " " + timeFormat(k.LastModified)
 			}
 			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
 		}
@@ -129,27 +136,25 @@ func Del(prefixes []string, searchDepth int, isRecursive bool) {
 		return
 	}
 	keys := make(chan string, len(prefixes)*2+1)
-	var b *s3.Bucket = nil
+	var s3Service *s3.S3 = nil
+	var bucket string = ""
 	go func() {
 		for _, delPrefix := range prefixes {
 			bucket, prefix := parseS3Uri(delPrefix)
 
-			if b == nil {
-				b = GetBucket(bucket)
+			if s3Service == nil {
+				s3Service = GetS3Service(bucket)
 			}
 
 			keys <- prefix
 			if *delRecurse {
-				keyExists, err := b.Exists(prefix)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				keyExists := s3wrapper.Exists(s3Service, bucket, prefix)
 
 				if keyExists {
 					keys <- prefix
 				} else if *delRecurse {
-					for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
-						keys <- key.Key
+					for key := range s3wrapper.ListRecurse(s3Service, bucket, prefix, searchDepth) {
+						keys <- *key.Key
 					}
 
 				} else {
@@ -169,24 +174,24 @@ func Del(prefixes []string, searchDepth int, isRecursive bool) {
 			for key := range keys {
 				batch = append(batch, key)
 				if len(batch) >= 100 {
-					err := s3wrapper.DeleteMulti(b, batch)
+					err, deleted := s3wrapper.DeleteMulti(s3Service, bucket, batch)
 					if err != nil {
 						log.Fatalln(err)
 					}
-					for _, k := range batch {
-						msgs <- fmt.Sprintf("File %s Deleted\n", k)
+					for _, k := range deleted.Deleted {
+						msgs <- fmt.Sprintf("File %s Deleted\n", *k.Key)
 					}
 					batch = batch[:0]
 				}
 			}
 
 			if len(batch) > 0 {
-				err := s3wrapper.DeleteMulti(b, batch)
+				err, deleted := s3wrapper.DeleteMulti(s3Service, bucket, batch)
 				if err != nil {
 					log.Fatalln(err)
 				}
-				for _, k := range batch {
-					msgs <- fmt.Sprintf("File %s Deleted\n", k)
+				for _, k := range deleted.Deleted {
+					msgs <- fmt.Sprintf("File %s Deleted\n", *k.Key)
 				}
 			}
 			wg.Done()
