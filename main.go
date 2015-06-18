@@ -1,5 +1,8 @@
 package main
 
+/**
+ * A utility for doing operations on s3 faster than s3cmd
+ */
 import (
 	"fmt"
 	"io/ioutil"
@@ -21,6 +24,7 @@ import (
 
 type s3List []string
 
+// Set overrides kingping's Set method to validate value for s3 URIs
 func (s *s3List) Set(value string) error {
 	hasMatch, err := regexp.MatchString("^s3://", value)
 	if err != nil {
@@ -38,10 +42,12 @@ func (s *s3List) String() string {
 	return ""
 }
 
+// IsCumulative specifies S3List as a cumulative argument
 func (s *s3List) IsCumulative() bool {
 	return true
 }
 
+// S3List creates a new S3List kingpin setting
 func S3List(s kingpin.Settings) (target *[]string) {
 	target = new([]string)
 	s.SetValue((*s3List)(target))
@@ -66,6 +72,7 @@ var (
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
 
+// parseS3Uri parses a s3 uri into it's bucket and prefix
 func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	s3UriParts := strings.Split(s3Uri, "/")
 	prefix = strings.Join(s3UriParts[3:], "/")
@@ -73,6 +80,7 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	return
 }
 
+// GetBucket builds a s3 connection retrieving the bucket
 func GetBucket(bucket string) *s3.Bucket {
 	err, auth := awswrapper.GetAwsAuth()
 	if err != nil {
