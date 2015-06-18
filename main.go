@@ -82,7 +82,7 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 
 // GetBucket builds a s3 connection retrieving the bucket
 func GetBucket(bucket string) *s3.Bucket {
-	err, auth := awswrapper.GetAwsAuth()
+	auth, err := awswrapper.GetAwsAuth()
 	if err != nil {
 		log.Fatalln(err)
 	}
