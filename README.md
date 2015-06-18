@@ -87,7 +87,7 @@ Args:
 
 ```
 
-####A note on search depth
+####Using search depth to *go* faster
 Many times you know the structure of your s3 bucket, this can be used to optimize listings. Say you have a structure like so:
 ```bash
 fasts3 ls s3://mybuck/logs/
