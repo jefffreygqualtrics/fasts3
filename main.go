@@ -4,6 +4,9 @@ package main
  * A utility for doing operations on s3 faster than s3cmd
  */
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -72,6 +75,10 @@ var (
 	get            = app.Command("get", "Fetch files from s3")
 	getS3Uris      = S3List(get.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
 	getSearchDepth = get.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+
+	stream            = app.Command("stream", "Stream s3 files to stdout")
+	streamS3Uris      = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
+	streamSearchDepth = stream.Flag("search-depth", "search depth to search for work.").Default("0").Int()
 
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
@@ -289,8 +296,91 @@ func Get(prefixes []string, searchDepth int) {
 				msgs <- fmt.Sprintf("Getting %s -> %s\n", rq.Key, dest)
 				err := s3wrapper.GetToFile(b, rq.Key, dest)
 				if err != nil {
-					log.Println(dest, rq.Key)
+					log.Fatalln(err)
+				}
+			}
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(msgs)
+	}()
+	for msg := range msgs {
+		fmt.Print(msg)
+	}
+}
+
+// getReaderByExt is a factory for reader based on the extension of the key
+func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
+	ext := path.Ext(key)
+	reader := bytes.NewReader(bts)
+	if ext == ".gz" {
+		gzReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return nil, err
+		}
+		return bufio.NewReader(gzReader), nil
+	} else {
+		return bufio.NewReader(reader), nil
+	}
+}
+
+// Stream takes a set of prefixes lists them and
+// streams the contents by line
+func Stream(prefixes []string, searchDepth int) {
+	if len(prefixes) == 0 {
+		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
+		return
+	}
+	keys := make(chan string, len(prefixes)*2+1)
+	var b *s3.Bucket = nil
+	go func() {
+		for _, prefix := range prefixes {
+			bucket, prefix := parseS3Uri(prefix)
+
+			if b == nil {
+				b = GetBucket(bucket)
+			}
+
+			keyExists, err := b.Exists(prefix)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			if keyExists {
+				keys <- prefix
+			} else {
+				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+					keys <- key.Key
+				}
+
+			}
+		}
+		close(keys)
+	}()
+
+	var wg sync.WaitGroup
+	msgs := make(chan string, 1000)
+	for i := 1; i <= 10; i++ {
+		wg.Add(1)
+		go func() {
+			for key := range keys {
+				bts, err := s3wrapper.Get(b, key)
+				reader, err := getReaderByExt(bts, key)
+				if err != nil {
 					panic(err)
+				}
+				for {
+					line, _, err := reader.ReadLine()
+					if err != nil {
+						if err.Error() == "EOF" {
+							break
+						} else {
+							log.Fatalln(err)
+						}
+					}
+					msgs <- string(line) + "\n"
 				}
 			}
 			wg.Done()
@@ -313,6 +403,8 @@ func main() {
 		Del(*delPrefixes, *lsSearchDepth, *delRecurse)
 	case "get":
 		Get(*getS3Uris, *getSearchDepth)
+	case "stream":
+		Stream(*streamS3Uris, *streamSearchDepth)
 	case "init":
 		Init()
 	}
