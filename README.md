@@ -31,7 +31,7 @@ export AWS_SECRET_ACCESS_KEY=<secret_key>
 #Usage
 
 ```
-usage: fasts3 [<flags>] <command> [<flags>] [<args> ...]
+usage: fasts3 <command> [<flags>] [<args> ...]
 
 Multi-threaded s3 utility
 
@@ -39,7 +39,7 @@ Flags:
   --help  Show help.
 
 Commands:
-  help [<flags>] <command>
+  help [<command>]
     Show help for a command.
 
   ls [<flags>] <s3uri>
@@ -48,7 +48,13 @@ Commands:
   del [<flags>] [<prefixes>]
     Delete s3 keys
 
-  init [<flags>]
+  get [<flags>] [<prefixes>]
+    Fetch files from s3
+
+  stream [<flags>] [<prefixes>]
+    Stream s3 files to stdout
+
+  init
     Initialize .fs3cfg file in home directory
 
 ```
@@ -87,6 +93,34 @@ Args:
 
 ```
 
+#####get
+```
+usage: fasts3 get [<flags>] [<prefixes>]
+
+Fetch files from s3
+
+Flags:
+  --search-depth=0  search depth to search for work.
+
+Args:
+  [<prefixes>]  list of prefixes or s3Uris to retrieve
+```
+
+#####stream
+```
+usage: fasts3 stream [<flags>] [<prefixes>]
+
+Stream s3 files to stdout
+
+Flags:
+  --search-depth=0  search depth to search for work.
+  --key-regex=KEY-REGEX
+                    regex filter for keys
+
+Args:
+  [<prefixes>]  list of prefixes or s3Uris to retrieve
+```
+
 ####Using search depth to *go* faster
 Many times you know the structure of your s3 bucket, this can be used to optimize listings. Say you have a structure like so:
 ```bash
@@ -112,4 +146,11 @@ fasts3 ls -r --search-depth 1 s3://mybucket/ # lists all keys in the bucket usin
 fasts3 del -r s3://mybuck/logs/ # deletes all keys in the prefix
 fasts3 del s3://mybuck/logs/2015/01/12/api.log.201501122359.gz # deletes single key
 fasts3 del $(fasts3 ls s3://mybuck/logs/2015/01/12 | awk -F " " '/api.log/{print $2}') # delete all keys that have "api.log" in them
+
+#get
+fasts3 get s3://mybuck/logs/ # fetches all logs in the prefix
+
+# stream
+fasts3 stream s3://mybuck/logs/ # streams all logs under prefix to stdout
+fasts3 stream --key-filter ".*2015-01-01" s3://mybuck/logs/ # streams all logs with 2015-01-01 in the key name stdout
 ```
