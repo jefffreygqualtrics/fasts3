@@ -1,7 +1,9 @@
 package s3wrapper
 
 import (
+	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -134,6 +136,42 @@ func Get(bucket *s3.Bucket, key string) ([]byte, error) {
 		}
 	}
 
+}
+
+// createPathIfNotExists takes a path and creates
+// it if it doesn't exist
+func createPathIfNotExists(path string) error {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		err := os.MkdirAll(path, 0755)
+		if err != nil {
+			return err
+		}
+	} else {
+		return nil
+	}
+	return nil
+}
+
+// GetToFile takes a bucket and key and puts the bytes to a file
+// in specified by dest
+func GetToFile(bucket *s3.Bucket, key string, dest string) error {
+	destParts := strings.Split(dest, "/")
+	path := strings.Join(destParts[0:len(destParts)-1], "/")
+
+	if err := createPathIfNotExists(path); err != nil {
+		return err
+	}
+
+	bts, err := Get(bucket, key)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(dest, bts, 0644)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func toDeleteStruct(keys []string) s3.Delete {

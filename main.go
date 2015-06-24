@@ -63,6 +63,10 @@ var (
 	delRecurse     = del.Flag("recursive", "Delete all keys with prefix").Short('r').Bool()
 	delSearchDepth = del.Flag("search-depth", "search depth to search for work.").Default("0").Int()
 
+	get            = app.Command("get", "Fetch files from s3")
+	getS3Uris      = S3List(get.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
+	getSearchDepth = get.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
 
@@ -222,12 +226,85 @@ secret_key=<secret_key>`
 	return nil
 }
 
+type GetRequest struct {
+	Key            string
+	OriginalPrefix string
+}
+
+// Get lists and retrieves s3 keys given a list of prefixes
+// searchDepth can also be specified to increase speed of listing
+func Get(prefixes []string, searchDepth int) {
+	if len(prefixes) == 0 {
+		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
+		return
+	}
+	getRequests := make(chan GetRequest, len(prefixes)*2+1)
+	var b *s3.Bucket = nil
+	go func() {
+		for _, prefix := range prefixes {
+			bucket, prefix := parseS3Uri(prefix)
+
+			if b == nil {
+				b = GetBucket(bucket)
+			}
+
+			keyExists, err := b.Exists(prefix)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			if keyExists {
+				keyParts := strings.Split(prefix, "/")
+				ogPrefix := strings.Join(keyParts[0:len(keyParts)-1], "/") + "/"
+				getRequests <- GetRequest{Key: prefix, OriginalPrefix: ogPrefix}
+			} else {
+				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+					getRequests <- GetRequest{Key: key.Key, OriginalPrefix: prefix}
+				}
+
+			}
+		}
+		close(getRequests)
+	}()
+
+	var wg sync.WaitGroup
+	msgs := make(chan string, 1000)
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	for i := 1; i <= 10; i++ {
+		wg.Add(1)
+		go func() {
+			for rq := range getRequests {
+				dest := path.Join(workingDirectory, strings.Replace(rq.Key, rq.OriginalPrefix, "", 1))
+				msgs <- fmt.Sprintf("Getting %s -> %s\n", rq.Key, dest)
+				err := s3wrapper.GetToFile(b, rq.Key, dest)
+				if err != nil {
+					log.Println(dest, rq.Key)
+					panic(err)
+				}
+			}
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(msgs)
+	}()
+	for msg := range msgs {
+		fmt.Print(msg)
+	}
+}
+
 func main() {
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case "ls":
 		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate)
 	case "del":
 		Del(*delPrefixes, *lsSearchDepth, *delRecurse)
+	case "get":
+		Get(*getS3Uris, *getSearchDepth)
 	case "init":
 		Init()
 	}
