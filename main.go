@@ -79,6 +79,7 @@ var (
 	stream            = app.Command("stream", "Stream s3 files to stdout")
 	streamS3Uris      = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
 	streamSearchDepth = stream.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+	streamKeyRegex    = stream.Flag("key-regex", "regex filter for keys").Default("").String()
 
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
@@ -328,12 +329,18 @@ func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
 
 // Stream takes a set of prefixes lists them and
 // streams the contents by line
-func Stream(prefixes []string, searchDepth int) {
+func Stream(prefixes []string, searchDepth int, keyRegex string) {
 	if len(prefixes) == 0 {
 		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
 		return
 	}
 	keys := make(chan string, len(prefixes)*2+1)
+	var keyRegexFilter *regexp.Regexp
+	if keyRegex != "" {
+		keyRegexFilter = regexp.MustCompile(keyRegex)
+	} else {
+		keyRegexFilter = nil
+	}
 	var b *s3.Bucket = nil
 	go func() {
 		for _, prefix := range prefixes {
@@ -349,9 +356,15 @@ func Stream(prefixes []string, searchDepth int) {
 			}
 
 			if keyExists {
+				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
+					continue
+				}
 				keys <- prefix
 			} else {
 				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+					if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
+						continue
+					}
 					keys <- key.Key
 				}
 
@@ -404,7 +417,7 @@ func main() {
 	case "get":
 		Get(*getS3Uris, *getSearchDepth)
 	case "stream":
-		Stream(*streamS3Uris, *streamSearchDepth)
+		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex)
 	case "init":
 		Init()
 	}
