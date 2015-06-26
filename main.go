@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -76,10 +77,11 @@ var (
 	getS3Uris      = S3List(get.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
 	getSearchDepth = get.Flag("search-depth", "search depth to search for work.").Default("0").Int()
 
-	stream            = app.Command("stream", "Stream s3 files to stdout")
-	streamS3Uris      = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
-	streamSearchDepth = stream.Flag("search-depth", "search depth to search for work.").Default("0").Int()
-	streamKeyRegex    = stream.Flag("key-regex", "regex filter for keys").Default("").String()
+	stream               = app.Command("stream", "Stream s3 files to stdout")
+	streamS3Uris         = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
+	streamSearchDepth    = stream.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+	streamKeyRegex       = stream.Flag("key-regex", "regex filter for keys").Default("").String()
+	streamIncludeKeyName = stream.Flag("include-key-name", "regex filter for keys").Bool()
 
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
@@ -329,7 +331,7 @@ func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
 
 // Stream takes a set of prefixes lists them and
 // streams the contents by line
-func Stream(prefixes []string, searchDepth int, keyRegex string) {
+func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName bool) {
 	if len(prefixes) == 0 {
 		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
 		return
@@ -362,7 +364,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string) {
 				keys <- prefix
 			} else {
 				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
-					if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
+					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
 						continue
 					}
 					keys <- key.Key
@@ -393,7 +395,11 @@ func Stream(prefixes []string, searchDepth int, keyRegex string) {
 							log.Fatalln(err)
 						}
 					}
-					msgs <- string(line) + "\n"
+					msg := fmt.Sprintf("%s\n", string(line))
+					if includeKeyName {
+						msg = fmt.Sprintf("[%s] %s", key, msg)
+					}
+					msgs <- msg
 				}
 			}
 			wg.Done()
@@ -409,6 +415,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string) {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case "ls":
 		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate)
@@ -417,7 +424,7 @@ func main() {
 	case "get":
 		Get(*getS3Uris, *getSearchDepth)
 	case "stream":
-		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex)
+		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex, *streamIncludeKeyName)
 	case "init":
 		Init()
 	}
