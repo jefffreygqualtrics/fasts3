@@ -1,4 +1,5 @@
-#FastS3 utility
+![FastS3](http://i.imgur.com/A42azaA.png)
+---
 
 Fast s3 utility is a faster version of s3cmd's ls and del functions ideal for listing and deleting buckets containing millions of keys.
 
