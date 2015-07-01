@@ -42,31 +42,35 @@ func StripS3Path(key string) string {
 
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
-func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) []listWork {
+func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) chan listWork {
 	currentPrefixes := []listWork{listWork{prefix, ""}}
-	results := []listWork{}
-	for i := 0; i < searchDepth; i++ {
-		newPrefixes := []listWork{}
-		for _, pfx := range currentPrefixes {
-			for res := range List(bucket, pfx.prefix, defaultDelimiter) {
-				if len(res.CommonPrefixes) != 0 {
-					for _, newPfx := range res.CommonPrefixes {
-						newPrefixes = append(newPrefixes, listWork{newPfx, ""})
+	results := make(chan listWork, 1000)
+	go func() {
+		for i := 0; i < searchDepth; i++ {
+			newPrefixes := []listWork{}
+			for _, pfx := range currentPrefixes {
+				for res := range List(bucket, pfx.prefix, defaultDelimiter) {
+					if len(res.CommonPrefixes) != 0 {
+						for _, newPfx := range res.CommonPrefixes {
+							newPrefixes = append(newPrefixes, listWork{newPfx, ""})
+						}
+						// catches the case where keys and common prefixes live in the same place
+						if len(res.Contents) > 0 {
+							results <- listWork{pfx.prefix, "/"}
+						}
+					} else {
+						results <- listWork{pfx.prefix, ""}
 					}
-					// catches the case where keys and common prefixes live in the same place
-					if len(res.Contents) > 0 {
-						results = append(results, listWork{pfx.prefix, "/"})
-					}
-				} else {
-					results = append(results, listWork{pfx.prefix, ""})
 				}
 			}
+			currentPrefixes = newPrefixes
 		}
-		currentPrefixes = newPrefixes
-	}
-	for _, pfx := range currentPrefixes {
-		results = append(results, pfx)
-	}
+		for _, pfx := range currentPrefixes {
+			results <- pfx
+		}
+		close(results)
+	}()
+
 	return results
 }
 
@@ -204,18 +208,30 @@ func DeleteMulti(bucket *s3.Bucket, keys []string) error {
 }
 
 // lists a prefix and includes common prefixes
-func ListWithCommonPrefixes(bucket *s3.Bucket, prefix string) <-chan s3.Key {
+func ListWithCommonPrefixes(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
 	ch := make(chan s3.Key, 1000)
+
+	var wg sync.WaitGroup
+	work := getListWork(bucket, prefix, searchDepth)
+	for i := 0; i < numListRoutines; i++ {
+		wg.Add(1)
+		go func() {
+			for workItem := range work {
+				for listResp := range List(bucket, workItem.prefix, defaultDelimiter) {
+					for _, prefix := range listResp.CommonPrefixes {
+						ch <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
+					}
+					for _, key := range listResp.Contents {
+						ch <- key
+					}
+				}
+			}
+			wg.Done()
+		}()
+	}
 	go func() {
-		defer close(ch)
-		for listResp := range List(bucket, prefix, defaultDelimiter) {
-			for _, prefix := range listResp.CommonPrefixes {
-				ch <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
-			}
-			for _, key := range listResp.Contents {
-				ch <- key
-			}
-		}
+		wg.Wait()
+		close(ch)
 	}()
 	return ch
 }
@@ -250,20 +266,19 @@ func partition(list []listWork, partitionSize int) [][]listWork {
 func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
 	ch := make(chan s3.Key, 2000)
 	var wg sync.WaitGroup
-
-	workPartitions := partition(getListWork(bucket, prefix, searchDepth), numListRoutines)
-	for _, partition := range workPartitions {
+	work := getListWork(bucket, prefix, searchDepth)
+	for i := 0; i < numListRoutines; i++ {
 		wg.Add(1)
-		go func(work []listWork) {
+		go func() {
 			defer wg.Done()
-			for _, workItem := range work {
+			for workItem := range work {
 				for res := range List(bucket, workItem.prefix, workItem.delimiter) {
 					for _, c := range res.Contents {
 						ch <- c
 					}
 				}
 			}
-		}(partition)
+		}()
 	}
 
 	go func() {

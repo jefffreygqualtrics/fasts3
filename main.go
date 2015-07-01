@@ -121,7 +121,7 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	if isRecursive {
 		ch = s3wrapper.ListRecurse(b, prefix, searchDepth)
 	} else {
-		ch = s3wrapper.ListWithCommonPrefixes(b, prefix)
+		ch = s3wrapper.ListWithCommonPrefixes(b, prefix, searchDepth)
 	}
 
 	for k := range ch {
