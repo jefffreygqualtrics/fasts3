@@ -43,29 +43,45 @@ func StripS3Path(key string) string {
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
 func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) chan listWork {
-	currentPrefixes := []listWork{listWork{prefix, ""}}
-	results := make(chan listWork, 1000)
+	currentPrefixes := make(chan listWork, 1000)
+	currentPrefixes <- listWork{prefix, ""}
+	close(currentPrefixes)
+	nextPrefixes := make(chan listWork, 1000)
+	results := make(chan listWork, 10000)
 	go func() {
 		for i := 0; i < searchDepth; i++ {
-			newPrefixes := []listWork{}
-			for _, pfx := range currentPrefixes {
-				for res := range List(bucket, pfx.prefix, defaultDelimiter) {
-					if len(res.CommonPrefixes) != 0 {
-						for _, newPfx := range res.CommonPrefixes {
-							newPrefixes = append(newPrefixes, listWork{newPfx, ""})
+			var wg sync.WaitGroup
+			for i := 0; i < 10; i++ {
+				wg.Add(1)
+				go func() {
+					for pfx := range currentPrefixes {
+						for res := range List(bucket, pfx.prefix, defaultDelimiter) {
+							if len(res.CommonPrefixes) != 0 {
+								for _, newPfx := range res.CommonPrefixes {
+									nextPrefixes <- listWork{newPfx, ""}
+								}
+								// catches the case where keys and common prefixes live in the same place
+								if len(res.Contents) > 0 {
+									results <- listWork{pfx.prefix, "/"}
+								}
+							} else {
+								results <- listWork{pfx.prefix, ""}
+							}
 						}
-						// catches the case where keys and common prefixes live in the same place
-						if len(res.Contents) > 0 {
-							results <- listWork{pfx.prefix, "/"}
-						}
-					} else {
-						results <- listWork{pfx.prefix, ""}
 					}
-				}
+					wg.Done()
+				}()
 			}
-			currentPrefixes = newPrefixes
+			wg.Wait()
+			close(nextPrefixes)
+			currentPrefixes = make(chan listWork, 1000)
+			for pfx := range nextPrefixes {
+				currentPrefixes <- pfx
+			}
+			close(currentPrefixes)
+			nextPrefixes = make(chan listWork, 1000)
 		}
-		for _, pfx := range currentPrefixes {
+		for pfx := range currentPrefixes {
 			results <- pfx
 		}
 		close(results)
@@ -76,7 +92,7 @@ func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) chan listWor
 
 // List function with retry and support for listing all keys in a prefix
 func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListResp {
-	ch := make(chan *s3.ListResp, 100)
+	ch := make(chan *s3.ListResp, 10000)
 	go func(pfix string, del string) {
 		defer close(ch)
 		isTruncated := true
