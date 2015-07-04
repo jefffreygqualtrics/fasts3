@@ -40,53 +40,45 @@ func StripS3Path(key string) string {
 	return metaFilePath[strings.Index(metaFilePath, header)+len(header):]
 }
 
+func listWorkRecursion(bucket *s3.Bucket, prefix string, currentDepth int, throttleChan chan bool, outChan chan listWork, wg *sync.WaitGroup) {
+	wg.Add(1)
+	throttleChan <- true
+	go func() {
+		if currentDepth == 0 {
+			outChan <- listWork{prefix, "/"}
+		} else {
+			for res := range List(bucket, prefix, defaultDelimiter) {
+				// catches the case where keys and common prefixes live in the same place
+				if len(res.Contents) > 0 {
+					outChan <- listWork{prefix, "/"}
+				}
+				if len(res.CommonPrefixes) != 0 {
+					for _, newPfx := range res.CommonPrefixes {
+						<-throttleChan
+						listWorkRecursion(bucket, newPfx, currentDepth-1, throttleChan, outChan, wg)
+						throttleChan <- true
+					}
+				} else {
+					outChan <- listWork{prefix, ""}
+				}
+			}
+		}
+		wg.Done()
+		<-throttleChan
+	}()
+}
+
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
 func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) chan listWork {
-	currentPrefixes := make(chan listWork, 1000)
-	currentPrefixes <- listWork{prefix, ""}
-	close(currentPrefixes)
-	nextPrefixes := make(chan listWork, 1000)
-	results := make(chan listWork, 10000)
+	results := make(chan listWork, 100000)
+	throttleChan := make(chan bool, numListRoutines)
+	var wg sync.WaitGroup
+	listWorkRecursion(bucket, prefix, searchDepth, throttleChan, results, &wg)
 	go func() {
-		for i := 0; i < searchDepth; i++ {
-			var wg sync.WaitGroup
-			for i := 0; i < 10; i++ {
-				wg.Add(1)
-				go func() {
-					for pfx := range currentPrefixes {
-						for res := range List(bucket, pfx.prefix, defaultDelimiter) {
-							if len(res.CommonPrefixes) != 0 {
-								for _, newPfx := range res.CommonPrefixes {
-									nextPrefixes <- listWork{newPfx, ""}
-								}
-								// catches the case where keys and common prefixes live in the same place
-								if len(res.Contents) > 0 {
-									results <- listWork{pfx.prefix, "/"}
-								}
-							} else {
-								results <- listWork{pfx.prefix, ""}
-							}
-						}
-					}
-					wg.Done()
-				}()
-			}
-			wg.Wait()
-			close(nextPrefixes)
-			currentPrefixes = make(chan listWork, 1000)
-			for pfx := range nextPrefixes {
-				currentPrefixes <- pfx
-			}
-			close(currentPrefixes)
-			nextPrefixes = make(chan listWork, 1000)
-		}
-		for pfx := range currentPrefixes {
-			results <- pfx
-		}
+		wg.Wait()
 		close(results)
 	}()
-
 	return results
 }
 
