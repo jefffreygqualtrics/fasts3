@@ -45,7 +45,7 @@ func listWorkRecursion(bucket *s3.Bucket, prefix string, currentDepth int, throt
 	throttleChan <- true
 	go func() {
 		if currentDepth == 0 {
-			outChan <- listWork{prefix, "/"}
+			outChan <- listWork{prefix, ""}
 		} else {
 			for res := range List(bucket, prefix, defaultDelimiter) {
 				// catches the case where keys and common prefixes live in the same place
