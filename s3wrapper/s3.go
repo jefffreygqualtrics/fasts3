@@ -40,11 +40,15 @@ func StripS3Path(key string) string {
 	return metaFilePath[strings.Index(metaFilePath, header)+len(header):]
 }
 
-func listWorkRecursion(bucket *s3.Bucket, prefix string, currentDepth int, throttleChan chan bool, outChan chan listWork, wg *sync.WaitGroup) {
+// listWorkRecursion finds all the prefixes under prefix given searchDepth, throttleChan is a channel of booleans which limits the number
+// of go routines to len(throttleChan), outChan is where the output list work is written, finally wg is a WaitGroup which tells the client
+// when the function is complete
+func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan listWork, wg *sync.WaitGroup) {
 	wg.Add(1)
 	throttleChan <- true
 	go func() {
-		if currentDepth == 0 {
+		// if the current depth has reached 1 we are finished
+		if searchDepth == 0 {
 			outChan <- listWork{prefix, ""}
 		} else {
 			for res := range List(bucket, prefix, defaultDelimiter) {
@@ -52,13 +56,15 @@ func listWorkRecursion(bucket *s3.Bucket, prefix string, currentDepth int, throt
 				if len(res.Contents) > 0 {
 					outChan <- listWork{prefix, "/"}
 				}
+
 				if len(res.CommonPrefixes) != 0 {
 					for _, newPfx := range res.CommonPrefixes {
+						// release the current routine we are using as we will be blocked in the recursive call
 						<-throttleChan
-						listWorkRecursion(bucket, newPfx, currentDepth-1, throttleChan, outChan, wg)
+						listWorkRecursion(bucket, newPfx, searchDepth-1, throttleChan, outChan, wg)
 						throttleChan <- true
 					}
-				} else {
+				} else { // if there are no common prefixes this is the end of the depth for this prefix
 					outChan <- listWork{prefix, ""}
 				}
 			}
