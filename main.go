@@ -118,11 +118,7 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	b := GetBucket(bucket)
 
 	var ch <-chan s3.Key
-	if isRecursive {
-		ch = s3wrapper.ListRecurse(b, prefix, searchDepth)
-	} else {
-		ch = s3wrapper.ListWithCommonPrefixes(b, prefix, searchDepth)
-	}
+	ch = s3wrapper.ListRecurse(b, prefix, searchDepth, isRecursive)
 
 	for k := range ch {
 		if k.Size < 0 {
@@ -170,7 +166,7 @@ func Del(prefixes []string, searchDepth int, isRecursive bool) {
 				if keyExists {
 					keys <- prefix
 				} else if *delRecurse {
-					for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+					for key := range s3wrapper.ListRecurse(b, prefix, searchDepth, true) {
 						keys <- key.Key
 					}
 
@@ -276,7 +272,7 @@ func Get(prefixes []string, searchDepth int) {
 				ogPrefix := strings.Join(keyParts[0:len(keyParts)-1], "/") + "/"
 				getRequests <- GetRequest{Key: prefix, OriginalPrefix: ogPrefix}
 			} else {
-				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth, true) {
 					getRequests <- GetRequest{Key: key.Key, OriginalPrefix: prefix}
 				}
 
@@ -363,7 +359,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 				}
 				keys <- prefix
 			} else {
-				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth, true) {
 					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
 						continue
 					}

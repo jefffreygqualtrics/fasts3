@@ -43,29 +43,39 @@ func StripS3Path(key string) string {
 // listWorkRecursion finds all the prefixes under prefix given searchDepth, throttleChan is a channel of booleans which limits the number
 // of go routines to len(throttleChan), outChan is where the output list work is written, finally wg is a WaitGroup which tells the client
 // when the function is complete
-func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan listWork, wg *sync.WaitGroup) {
+func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan s3.Key, wg *sync.WaitGroup, isRecursive bool) {
 	wg.Add(1)
 	throttleChan <- true
 	go func() {
 		// if the current depth has reached 1 we are finished
 		if searchDepth == 0 {
-			outChan <- listWork{prefix, ""}
+			delimiter := ""
+			if !isRecursive {
+				delimiter = "/"
+			}
+			for listResp := range List(bucket, prefix, delimiter) {
+				for _, prefix := range listResp.CommonPrefixes {
+					outChan <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
+				}
+				for _, key := range listResp.Contents {
+					outChan <- key
+				}
+			}
 		} else {
 			for res := range List(bucket, prefix, defaultDelimiter) {
-				// catches the case where keys and common prefixes live in the same place
-				if len(res.Contents) > 0 {
-					outChan <- listWork{prefix, "/"}
+				for _, key := range res.Contents {
+					outChan <- key
 				}
 
 				if len(res.CommonPrefixes) != 0 {
 					for _, newPfx := range res.CommonPrefixes {
 						// release the current routine we are using as we will be blocked in the recursive call
 						<-throttleChan
-						listWorkRecursion(bucket, newPfx, searchDepth-1, throttleChan, outChan, wg)
+						listWorkRecursion(bucket, newPfx, searchDepth-1, throttleChan, outChan, wg, isRecursive)
 						throttleChan <- true
 					}
 				} else { // if there are no common prefixes this is the end of the depth for this prefix
-					outChan <- listWork{prefix, ""}
+					listWorkRecursion(bucket, prefix, 0, throttleChan, outChan, wg, isRecursive)
 				}
 			}
 		}
@@ -76,11 +86,11 @@ func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, thrott
 
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
-func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) chan listWork {
-	results := make(chan listWork, 100000)
+func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
+	results := make(chan s3.Key, 100000)
 	throttleChan := make(chan bool, numListRoutines)
 	var wg sync.WaitGroup
-	listWorkRecursion(bucket, prefix, searchDepth, throttleChan, results, &wg)
+	listWorkRecursion(bucket, prefix, searchDepth, throttleChan, results, &wg, isRecursive)
 	go func() {
 		wg.Wait()
 		close(results)
@@ -221,35 +231,6 @@ func DeleteMulti(bucket *s3.Bucket, keys []string) error {
 	return nil
 }
 
-// lists a prefix and includes common prefixes
-func ListWithCommonPrefixes(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
-	ch := make(chan s3.Key, 1000)
-
-	var wg sync.WaitGroup
-	work := getListWork(bucket, prefix, searchDepth)
-	for i := 0; i < numListRoutines; i++ {
-		wg.Add(1)
-		go func() {
-			for workItem := range work {
-				for listResp := range List(bucket, workItem.prefix, defaultDelimiter) {
-					for _, prefix := range listResp.CommonPrefixes {
-						ch <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
-					}
-					for _, key := range listResp.Contents {
-						ch <- key
-					}
-				}
-			}
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-	return ch
-}
-
 // min function for integers
 func intMin(x, y int) int {
 	if x < y {
@@ -274,30 +255,4 @@ func partition(list []listWork, partitionSize int) [][]listWork {
 		partitions = append(partitions, list[i:outerBound])
 	}
 	return partitions
-}
-
-// listRecurse lists prefix in parallel using searchDepth to search for routine's work
-func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
-	ch := make(chan s3.Key, 2000)
-	var wg sync.WaitGroup
-	work := getListWork(bucket, prefix, searchDepth)
-	for i := 0; i < numListRoutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for workItem := range work {
-				for res := range List(bucket, workItem.prefix, workItem.delimiter) {
-					for _, c := range res.Contents {
-						ch <- c
-					}
-				}
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-	return ch
 }
