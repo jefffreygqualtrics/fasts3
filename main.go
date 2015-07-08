@@ -120,24 +120,31 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	var ch <-chan s3.Key
 	ch = s3wrapper.ListRecurse(b, prefix, searchDepth, isRecursive)
 
-	for k := range ch {
-		if k.Size < 0 {
-			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
-		} else {
-			var size string
-			if isHumanReadable {
-				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
-			} else {
-				size = fmt.Sprintf("%10d", k.Size)
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			for k := range ch {
+				if k.Size < 0 {
+					fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
+				} else {
+					var size string
+					if isHumanReadable {
+						size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
+					} else {
+						size = fmt.Sprintf("%10d", k.Size)
+					}
+					date := ""
+					if includeDate {
+						date = " " + k.LastModified
+					}
+					fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
+				}
 			}
-			date := ""
-			if includeDate {
-				date = " " + k.LastModified
-			}
-			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
-		}
+			wg.Done()
+		}()
 	}
-
+	wg.Wait()
 }
 
 // Del deletes a set of prefixes(s3 keys or partial keys
