@@ -120,33 +120,25 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	var ch <-chan s3.Key
 	ch = s3wrapper.ListRecurse(b, prefix, searchDepth, isRecursive)
 
-	var wg sync.WaitGroup
 	writer := bufio.NewWriter(os.Stdout)
-	for i := 0; i < runtime.NumCPU(); i++ {
-		wg.Add(1)
-		go func() {
-			for k := range ch {
-				if k.Size < 0 {
-					writer.WriteString(fmt.Sprintf("%10s s3://%s/%s\n", "DIR", bucket, k.Key))
-				} else {
-					var size string
-					if isHumanReadable {
-						size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
-					} else {
-						size = fmt.Sprintf("%10d", k.Size)
-					}
-					date := ""
-					if includeDate {
-						date = " " + k.LastModified
-					}
-					writer.WriteString(fmt.Sprintf("%s%s s3://%s/%s\n", size, date, bucket, k.Key))
-				}
+	for k := range ch {
+		if k.Size < 0 {
+			writer.WriteString(fmt.Sprintf("%10s s3://%s/%s\n", "DIR", bucket, k.Key))
+		} else {
+			var size string
+			if isHumanReadable {
+				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
+			} else {
+				size = fmt.Sprintf("%10d", k.Size)
 			}
-			writer.Flush()
-			wg.Done()
-		}()
+			date := ""
+			if includeDate {
+				date = " " + k.LastModified
+			}
+			writer.WriteString(fmt.Sprintf("%s%s s3://%s/%s\n", size, date, bucket, k.Key))
+		}
 	}
-	wg.Wait()
+	writer.Flush()
 }
 
 // Del deletes a set of prefixes(s3 keys or partial keys
