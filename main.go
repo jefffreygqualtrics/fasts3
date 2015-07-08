@@ -121,10 +121,10 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	ch = s3wrapper.ListRecurse(b, prefix, searchDepth, isRecursive)
 
 	var wg sync.WaitGroup
+	writer := bufio.NewWriter(os.Stdout)
 	for i := 0; i < runtime.NumCPU(); i++ {
 		wg.Add(1)
 		go func() {
-			writer := bufio.NewWriter(os.Stdout)
 			for k := range ch {
 				if k.Size < 0 {
 					writer.WriteString(fmt.Sprintf("%10s s3://%s/%s\n", "DIR", bucket, k.Key))
