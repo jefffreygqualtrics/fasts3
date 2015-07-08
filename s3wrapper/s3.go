@@ -41,8 +41,8 @@ func StripS3Path(key string) string {
 }
 
 // listWorkRecursion finds all the prefixes under prefix given searchDepth, throttleChan is a channel of booleans which limits the number
-// of go routines to len(throttleChan), outChan is where the output list work is written, finally wg is a WaitGroup which tells the client
-// when the function is complete
+// of go routines to len(throttleChan), outChan is where the output list work is written, wg is a WaitGroup which tells the client
+// when the function is complete, isRecursive tells the lister how to list the prefixes and keys
 func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan s3.Key, wg *sync.WaitGroup, isRecursive bool) {
 	wg.Add(1)
 	throttleChan <- true
@@ -86,7 +86,7 @@ func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, thrott
 
 // getListWork generates a list of prefixes based on prefix by searching down the searchDepth
 // using DELIMITER as a delimiter
-func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
+func FastList(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
 	results := make(chan s3.Key, 100000)
 	throttleChan := make(chan bool, numListRoutines)
 	var wg sync.WaitGroup
