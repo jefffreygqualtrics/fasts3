@@ -124,9 +124,10 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	for i := 0; i < runtime.NumCPU(); i++ {
 		wg.Add(1)
 		go func() {
+			writer := bufio.NewWriter(os.Stdout)
 			for k := range ch {
 				if k.Size < 0 {
-					fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
+					writer.WriteString(fmt.Sprintf("%10s s3://%s/%s\n", "DIR", bucket, k.Key))
 				} else {
 					var size string
 					if isHumanReadable {
@@ -138,9 +139,10 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 					if includeDate {
 						date = " " + k.LastModified
 					}
-					fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
+					writer.WriteString(fmt.Sprintf("%s%s s3://%s/%s\n", size, date, bucket, k.Key))
 				}
 			}
+			writer.Flush()
 			wg.Done()
 		}()
 	}
