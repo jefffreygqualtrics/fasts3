@@ -84,8 +84,9 @@ func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, thrott
 	}()
 }
 
-// getListWork generates a list of prefixes based on prefix by searching down the searchDepth
-// using DELIMITER as a delimiter
+// FastList does a recursive threaded operation to generate a list of prefixes based on prefix
+// by searching down the searchDepth using DELIMITER as a delimiter and isRecursive to tell
+// whether or not to use a delimiter when listing
 func FastList(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
 	results := make(chan s3.Key, 100000)
 	throttleChan := make(chan bool, numListRoutines)
