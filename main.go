@@ -120,7 +120,7 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 	var ch <-chan s3.Key
 	ch = s3wrapper.ListRecurse(b, prefix, searchDepth, isRecursive)
 
-	writer := bufio.NewWriter(os.Stdout)
+	writer := bufio.NewWriterSize(os.Stdout, 16384)
 	for k := range ch {
 		if k.Size < 0 {
 			writer.WriteString(fmt.Sprintf("%10s s3://%s/%s\n", "DIR", bucket, k.Key))
