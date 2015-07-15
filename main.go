@@ -76,6 +76,7 @@ var (
 	get            = app.Command("get", "Fetch files from s3")
 	getS3Uris      = S3List(get.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
 	getSearchDepth = get.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+	getKeyRegex    = get.Flag("key-regex", "regex filter for keys").Default("").String()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
 	streamS3Uris         = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
@@ -246,10 +247,17 @@ type GetRequest struct {
 
 // Get lists and retrieves s3 keys given a list of prefixes
 // searchDepth can also be specified to increase speed of listing
-func Get(prefixes []string, searchDepth int, logger *log.Logger) {
+func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger) {
 	if len(prefixes) == 0 {
 		logger.Println("No prefixes provided\n Usage: fasts3 get <prefix>")
 		return
+	}
+
+	var keyRegexFilter *regexp.Regexp
+	if keyRegex != "" {
+		keyRegexFilter = regexp.MustCompile(keyRegex)
+	} else {
+		keyRegexFilter = nil
 	}
 	getRequests := make(chan GetRequest, len(prefixes)*2+1)
 	var b *s3.Bucket = nil
@@ -267,11 +275,17 @@ func Get(prefixes []string, searchDepth int, logger *log.Logger) {
 			}
 
 			if keyExists {
+				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
+					continue
+				}
 				keyParts := strings.Split(prefix, "/")
 				ogPrefix := strings.Join(keyParts[0:len(keyParts)-1], "/") + "/"
 				getRequests <- GetRequest{Key: prefix, OriginalPrefix: ogPrefix}
 			} else {
 				for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
+					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
+						continue
+					}
 					getRequests <- GetRequest{Key: key.Key, OriginalPrefix: prefix}
 				}
 
@@ -419,7 +433,7 @@ func main() {
 	case "del":
 		Del(*delPrefixes, *lsSearchDepth, *delRecurse, logger)
 	case "get":
-		Get(*getS3Uris, *getSearchDepth, logger)
+		Get(*getS3Uris, *getSearchDepth, *getKeyRegex, logger)
 	case "stream":
 		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex, *streamIncludeKeyName, logger)
 	case "init":
