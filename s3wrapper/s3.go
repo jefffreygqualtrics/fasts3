@@ -40,39 +40,68 @@ func StripS3Path(key string) string {
 	return metaFilePath[strings.Index(metaFilePath, header)+len(header):]
 }
 
-// getListWork generates a list of prefixes based on prefix by searching down the searchDepth
-// using DELIMITER as a delimiter
-func getListWork(bucket *s3.Bucket, prefix string, searchDepth int) []listWork {
-	currentPrefixes := []listWork{listWork{prefix, ""}}
-	results := []listWork{}
-	for i := 0; i < searchDepth; i++ {
-		newPrefixes := []listWork{}
-		for _, pfx := range currentPrefixes {
-			for res := range List(bucket, pfx.prefix, defaultDelimiter) {
+// listWorkRecursion finds all the prefixes under prefix given searchDepth, throttleChan is a channel of booleans which limits the number
+// of go routines to len(throttleChan), outChan is where the output list work is written, wg is a WaitGroup which tells the client
+// when the function is complete, isRecursive tells the lister how to list the prefixes and keys
+func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan s3.Key, wg *sync.WaitGroup, isRecursive bool) {
+	wg.Add(1)
+	throttleChan <- true
+	go func() {
+		// if the current depth has reached 1 we are finished
+		if searchDepth == 0 {
+			delimiter := ""
+			if !isRecursive {
+				delimiter = "/"
+			}
+			for listResp := range List(bucket, prefix, delimiter) {
+				for _, prefix := range listResp.CommonPrefixes {
+					outChan <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
+				}
+				for _, key := range listResp.Contents {
+					outChan <- key
+				}
+			}
+		} else {
+			for res := range List(bucket, prefix, defaultDelimiter) {
+				for _, key := range res.Contents {
+					outChan <- key
+				}
+
 				if len(res.CommonPrefixes) != 0 {
 					for _, newPfx := range res.CommonPrefixes {
-						newPrefixes = append(newPrefixes, listWork{newPfx, ""})
+						// release the current routine we are using as we will be blocked in the recursive call
+						<-throttleChan
+						listWorkRecursion(bucket, newPfx, searchDepth-1, throttleChan, outChan, wg, isRecursive)
+						throttleChan <- true
 					}
-					// catches the case where keys and common prefixes live in the same place
-					if len(res.Contents) > 0 {
-						results = append(results, listWork{pfx.prefix, "/"})
-					}
-				} else {
-					results = append(results, listWork{pfx.prefix, ""})
+				} else { // if there are no common prefixes this is the end of the depth for this prefix
+					listWorkRecursion(bucket, prefix, 0, throttleChan, outChan, wg, isRecursive)
 				}
 			}
 		}
-		currentPrefixes = newPrefixes
-	}
-	for _, pfx := range currentPrefixes {
-		results = append(results, pfx)
-	}
+		wg.Done()
+		<-throttleChan
+	}()
+}
+
+// FastList does a recursive threaded operation to generate a list of prefixes based on prefix
+// by searching down the searchDepth using DELIMITER as a delimiter and isRecursive to tell
+// whether or not to use a delimiter when listing
+func FastList(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
+	results := make(chan s3.Key, 100000)
+	throttleChan := make(chan bool, numListRoutines)
+	var wg sync.WaitGroup
+	listWorkRecursion(bucket, prefix, searchDepth, throttleChan, results, &wg, isRecursive)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 	return results
 }
 
 // List function with retry and support for listing all keys in a prefix
 func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListResp {
-	ch := make(chan *s3.ListResp, 100)
+	ch := make(chan *s3.ListResp, 10000)
 	go func(pfix string, del string) {
 		defer close(ch)
 		isTruncated := true
@@ -203,23 +232,6 @@ func DeleteMulti(bucket *s3.Bucket, keys []string) error {
 	return nil
 }
 
-// lists a prefix and includes common prefixes
-func ListWithCommonPrefixes(bucket *s3.Bucket, prefix string) <-chan s3.Key {
-	ch := make(chan s3.Key, 1000)
-	go func() {
-		defer close(ch)
-		for listResp := range List(bucket, prefix, defaultDelimiter) {
-			for _, prefix := range listResp.CommonPrefixes {
-				ch <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
-			}
-			for _, key := range listResp.Contents {
-				ch <- key
-			}
-		}
-	}()
-	return ch
-}
-
 // min function for integers
 func intMin(x, y int) int {
 	if x < y {
@@ -244,31 +256,4 @@ func partition(list []listWork, partitionSize int) [][]listWork {
 		partitions = append(partitions, list[i:outerBound])
 	}
 	return partitions
-}
-
-// listRecurse lists prefix in parallel using searchDepth to search for routine's work
-func ListRecurse(bucket *s3.Bucket, prefix string, searchDepth int) <-chan s3.Key {
-	ch := make(chan s3.Key, 2000)
-	var wg sync.WaitGroup
-
-	workPartitions := partition(getListWork(bucket, prefix, searchDepth), numListRoutines)
-	for _, partition := range workPartitions {
-		wg.Add(1)
-		go func(work []listWork) {
-			defer wg.Done()
-			for _, workItem := range work {
-				for res := range List(bucket, workItem.prefix, workItem.delimiter) {
-					for _, c := range res.Contents {
-						ch <- c
-					}
-				}
-			}
-		}(partition)
-	}
-
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-	return ch
 }

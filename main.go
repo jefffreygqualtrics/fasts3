@@ -113,20 +113,16 @@ func GetBucket(bucket string) *s3.Bucket {
 }
 
 // Ls lists directorys or keys under a prefix
-func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool) {
+func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool, logger *log.Logger) {
 	bucket, prefix := parseS3Uri(s3Uri)
 	b := GetBucket(bucket)
 
 	var ch <-chan s3.Key
-	if isRecursive {
-		ch = s3wrapper.ListRecurse(b, prefix, searchDepth)
-	} else {
-		ch = s3wrapper.ListWithCommonPrefixes(b, prefix)
-	}
+	ch = s3wrapper.FastList(b, prefix, searchDepth, isRecursive)
 
 	for k := range ch {
 		if k.Size < 0 {
-			fmt.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
+			logger.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
 		} else {
 			var size string
 			if isHumanReadable {
@@ -138,16 +134,15 @@ func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate
 			if includeDate {
 				date = " " + k.LastModified
 			}
-			fmt.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
+			logger.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
 		}
 	}
-
 }
 
 // Del deletes a set of prefixes(s3 keys or partial keys
-func Del(prefixes []string, searchDepth int, isRecursive bool) {
+func Del(prefixes []string, searchDepth int, isRecursive bool, logger *log.Logger) {
 	if len(*delPrefixes) == 0 {
-		fmt.Printf("No prefixes provided\n Usage: fasts3 del <prefix>")
+		logger.Println("No prefixes provided\n Usage: fasts3 del <prefix>")
 		return
 	}
 	keys := make(chan string, len(prefixes)*2+1)
@@ -170,12 +165,12 @@ func Del(prefixes []string, searchDepth int, isRecursive bool) {
 				if keyExists {
 					keys <- prefix
 				} else if *delRecurse {
-					for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+					for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
 						keys <- key.Key
 					}
 
 				} else {
-					fmt.Printf("trying to delete a prefix, please add --recursive or -r to proceed\n")
+					logger.Println("trying to delete a prefix, please add --recursive or -r to proceed")
 				}
 			}
 		}
@@ -219,12 +214,12 @@ func Del(prefixes []string, searchDepth int, isRecursive bool) {
 		close(msgs)
 	}()
 	for msg := range msgs {
-		fmt.Print(msg)
+		logger.Print(msg)
 	}
 }
 
 // initializes configs necessary for fasts3 utility
-func Init() error {
+func Init(logger *log.Logger) error {
 	usr, err := user.Current()
 	if err != nil {
 		return err
@@ -236,9 +231,9 @@ func Init() error {
 access_key=<access_key>
 secret_key=<secret_key>`
 		ioutil.WriteFile(fs3cfg_path, []byte(cfg), 0644)
-		fmt.Printf("created template file %s\n", fs3cfg_path)
+		logger.Printf("created template file %s\n", fs3cfg_path)
 	} else {
-		fmt.Print(".fs3cfg already exists in home directory")
+		logger.Print(".fs3cfg already exists in home directory")
 	}
 
 	return nil
@@ -251,9 +246,9 @@ type GetRequest struct {
 
 // Get lists and retrieves s3 keys given a list of prefixes
 // searchDepth can also be specified to increase speed of listing
-func Get(prefixes []string, searchDepth int) {
+func Get(prefixes []string, searchDepth int, logger *log.Logger) {
 	if len(prefixes) == 0 {
-		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
+		logger.Println("No prefixes provided\n Usage: fasts3 get <prefix>")
 		return
 	}
 	getRequests := make(chan GetRequest, len(prefixes)*2+1)
@@ -276,7 +271,7 @@ func Get(prefixes []string, searchDepth int) {
 				ogPrefix := strings.Join(keyParts[0:len(keyParts)-1], "/") + "/"
 				getRequests <- GetRequest{Key: prefix, OriginalPrefix: ogPrefix}
 			} else {
-				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+				for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
 					getRequests <- GetRequest{Key: key.Key, OriginalPrefix: prefix}
 				}
 
@@ -310,7 +305,7 @@ func Get(prefixes []string, searchDepth int) {
 		close(msgs)
 	}()
 	for msg := range msgs {
-		fmt.Print(msg)
+		logger.Print(msg)
 	}
 }
 
@@ -331,9 +326,9 @@ func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
 
 // Stream takes a set of prefixes lists them and
 // streams the contents by line
-func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName bool) {
+func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName bool, logger *log.Logger) {
 	if len(prefixes) == 0 {
-		fmt.Printf("No prefixes provided\n Usage: fasts3 get <prefix>")
+		logger.Println("No prefixes provided\n Usage: fasts3 get <prefix>\n")
 		return
 	}
 	keys := make(chan string, len(prefixes)*2+1)
@@ -363,7 +358,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 				}
 				keys <- prefix
 			} else {
-				for key := range s3wrapper.ListRecurse(b, prefix, searchDepth) {
+				for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
 					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
 						continue
 					}
@@ -410,22 +405,25 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 		close(msgs)
 	}()
 	for msg := range msgs {
-		fmt.Print(msg)
+		logger.Print(msg)
 	}
 }
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	logBuf := bufio.NewWriter(os.Stdout)
+	logger := log.New(logBuf, "", 0)
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case "ls":
-		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate)
+		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate, logger)
 	case "del":
-		Del(*delPrefixes, *lsSearchDepth, *delRecurse)
+		Del(*delPrefixes, *lsSearchDepth, *delRecurse, logger)
 	case "get":
-		Get(*getS3Uris, *getSearchDepth)
+		Get(*getS3Uris, *getSearchDepth, logger)
 	case "stream":
-		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex, *streamIncludeKeyName)
+		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex, *streamIncludeKeyName, logger)
 	case "init":
-		Init()
+		Init(logger)
 	}
+	logBuf.Flush()
 }
