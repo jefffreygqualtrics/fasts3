@@ -102,6 +102,8 @@ Fetch files from s3
 
 Flags:
   --search-depth=0  search depth to search for work.
+  --key-regex=KEY-REGEX
+                    regex filter for keys
 
 Args:
   [<prefixes>]  list of prefixes or s3Uris to retrieve
