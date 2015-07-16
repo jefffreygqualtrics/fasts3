@@ -8,4 +8,4 @@ _fasts3_complete() {
     fi
 }
 
-compctl -K _fasts3_complete fasts3
+compctl -K _fasts3_complete -S '' fasts3
