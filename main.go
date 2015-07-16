@@ -274,7 +274,7 @@ func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger
 				log.Fatalln(err)
 			}
 
-			if keyExists {
+			if keyExists && prefix != "" {
 				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
 					continue
 				}
