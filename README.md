@@ -157,3 +157,16 @@ fasts3 get s3://mybuck/logs/ # fetches all logs in the prefix
 fasts3 stream s3://mybuck/logs/ # streams all logs under prefix to stdout
 fasts3 stream --key-filter ".*2015-01-01" s3://mybuck/logs/ # streams all logs with 2015-01-01 in the key name stdout
 ```
+
+###Completion
+Bash and ZSH completion are available, to install:
+
+for bash:
+```
+source completion.sh
+```
+
+for zsh:
+```
+source completion.zsh
+```
