@@ -366,7 +366,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 				log.Fatalln(err)
 			}
 
-			if keyExists {
+			if keyExists && prefix != "" {
 				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
 					continue
 				}
