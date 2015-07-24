@@ -327,7 +327,7 @@ func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger
 func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
 	ext := path.Ext(key)
 	reader := bytes.NewReader(bts)
-	if ext == ".gz" {
+	if ext == ".gz" || ext == ".gzip" {
 		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
 			return nil, err
