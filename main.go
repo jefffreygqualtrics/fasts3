@@ -5,8 +5,6 @@ package main
  */
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -323,21 +321,6 @@ func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger
 	}
 }
 
-// getReaderByExt is a factory for reader based on the extension of the key
-func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
-	ext := path.Ext(key)
-	reader := bytes.NewReader(bts)
-	if ext == ".gz" || ext == ".gzip" {
-		gzReader, err := gzip.NewReader(reader)
-		if err != nil {
-			return bufio.NewReader(reader), nil
-		}
-		return bufio.NewReader(gzReader), nil
-	} else {
-		return bufio.NewReader(reader), nil
-	}
-}
-
 // Stream takes a set of prefixes lists them and
 // streams the contents by line
 func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName bool, logger *log.Logger) {
@@ -390,8 +373,7 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 		wg.Add(1)
 		go func() {
 			for key := range keys {
-				bts, err := s3wrapper.Get(b, key)
-				reader, err := getReaderByExt(bts, key)
+				reader, err := s3wrapper.GetStream(b, key)
 				if err != nil {
 					panic(err)
 				}

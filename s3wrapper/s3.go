@@ -1,9 +1,13 @@
 package s3wrapper
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -165,6 +169,29 @@ func Get(bucket *s3.Bucket, key string) ([]byte, error) {
 		}
 	}
 
+}
+
+func GetStream(bucket *s3.Bucket, key string) (*bufio.Reader, error) {
+	bts, err := Get(bucket, key)
+	if err != nil {
+		return nil, err
+	}
+	return getReaderByExt(bts, key)
+}
+
+// getReaderByExt is a factory for reader based on the extension of the key
+func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
+	ext := path.Ext(key)
+	reader := bytes.NewReader(bts)
+	if ext == ".gz" || ext == ".gzip" {
+		gzReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return bufio.NewReader(reader), nil
+		}
+		return bufio.NewReader(gzReader), nil
+	} else {
+		return bufio.NewReader(reader), nil
+	}
 }
 
 // createPathIfNotExists takes a path and creates
