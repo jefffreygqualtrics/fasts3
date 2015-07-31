@@ -2,8 +2,8 @@ package s3wrapper
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -171,8 +171,23 @@ func Get(bucket *s3.Bucket, key string) ([]byte, error) {
 
 }
 
+func GetReader(bucket *s3.Bucket, key string) (io.ReadCloser, error) {
+	attempts := 0
+	for {
+		attempts++
+		reader, err := bucket.GetReader(key)
+		if err == nil {
+			return reader, nil
+		}
+		if attempts >= maxRetries && err != nil {
+			return nil, err
+		}
+	}
+
+}
+
 func GetStream(bucket *s3.Bucket, key string) (*bufio.Reader, error) {
-	bts, err := Get(bucket, key)
+	bts, err := GetReader(bucket, key)
 	if err != nil {
 		return nil, err
 	}
@@ -180,9 +195,8 @@ func GetStream(bucket *s3.Bucket, key string) (*bufio.Reader, error) {
 }
 
 // getReaderByExt is a factory for reader based on the extension of the key
-func getReaderByExt(bts []byte, key string) (*bufio.Reader, error) {
+func getReaderByExt(reader io.ReadCloser, key string) (*bufio.Reader, error) {
 	ext := path.Ext(key)
-	reader := bytes.NewReader(bts)
 	if ext == ".gz" || ext == ".gzip" {
 		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
