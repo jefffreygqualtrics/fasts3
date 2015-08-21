@@ -2,7 +2,7 @@ package s3wrapper
 
 import (
 	"bufio"
-	"compress/gzip"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"io/ioutil"
 	"log"
