@@ -16,10 +16,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AdRoll/goamz/aws"
 	"github.com/AdRoll/goamz/s3"
-	"github.com/TuneOSS/fasts3/awswrapper"
 	"github.com/TuneOSS/fasts3/s3wrapper"
+	"github.com/TuneOSS/fasts3/util"
 	"github.com/alecthomas/kingpin"
 	"github.com/dustin/go-humanize"
 )
@@ -85,36 +84,10 @@ var (
 	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
 )
 
-// parseS3Uri parses a s3 uri into it's bucket and prefix
-func parseS3Uri(s3Uri string) (bucket string, prefix string) {
-	s3UriParts := strings.Split(s3Uri, "/")
-	prefix = strings.Join(s3UriParts[3:], "/")
-	bucket = s3UriParts[2]
-	return
-}
-
-// GetBucket builds a s3 connection retrieving the bucket
-func GetBucket(bucket string) *s3.Bucket {
-	auth, err := awswrapper.GetAwsAuth()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	b := s3.New(auth, aws.USEast).Bucket(bucket)
-	loc, err := b.Location()
-	if err != nil {
-		log.Fatalln(err)
-
-	}
-	if aws.GetRegion(loc) != aws.USEast {
-		b = s3.New(auth, aws.GetRegion(loc)).Bucket(bucket)
-	}
-	return b
-}
-
 // Ls lists directorys or keys under a prefix
 func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool, logger *log.Logger) {
-	bucket, prefix := parseS3Uri(s3Uri)
-	b := GetBucket(bucket)
+	bucket, prefix := util.ParseS3Uri(s3Uri)
+	b := util.GetBucket(bucket)
 
 	var ch <-chan s3.Key
 	ch = s3wrapper.FastList(b, prefix, searchDepth, isRecursive)
@@ -148,10 +121,10 @@ func Del(prefixes []string, searchDepth int, isRecursive bool, logger *log.Logge
 	var b *s3.Bucket = nil
 	go func() {
 		for _, delPrefix := range prefixes {
-			bucket, prefix := parseS3Uri(delPrefix)
+			bucket, prefix := util.ParseS3Uri(delPrefix)
 
 			if b == nil {
-				b = GetBucket(bucket)
+				b = util.GetBucket(bucket)
 			}
 
 			keys <- prefix
@@ -261,10 +234,10 @@ func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger
 	var b *s3.Bucket = nil
 	go func() {
 		for _, prefix := range prefixes {
-			bucket, prefix := parseS3Uri(prefix)
+			bucket, prefix := util.ParseS3Uri(prefix)
 
 			if b == nil {
-				b = GetBucket(bucket)
+				b = util.GetBucket(bucket)
 			}
 
 			keyExists, err := b.Exists(prefix)
@@ -338,10 +311,10 @@ func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName 
 	var b *s3.Bucket = nil
 	go func() {
 		for _, prefix := range prefixes {
-			bucket, prefix := parseS3Uri(prefix)
+			bucket, prefix := util.ParseS3Uri(prefix)
 
 			if b == nil {
-				b = GetBucket(bucket)
+				b = util.GetBucket(bucket)
 			}
 
 			keyExists, err := b.Exists(prefix)
