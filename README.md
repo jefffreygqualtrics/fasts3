@@ -143,13 +143,14 @@ doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequent
 fasts3 ls s3://mybucket/ # lists top level directories and keys
 fasts3 ls -r s3://mybucket/ # lists all keys in the bucket
 fasts3 ls -r --search-depth 1 s3://mybucket/ # lists all keys in the bucket using the directories 1 level down to thread
+fasts3 ls -r s3://mybucket/ | awk '{s += $1}END{print s}' # sum sizes of all objects in the bucket
 
 # del
 fasts3 del -r s3://mybuck/logs/ # deletes all keys in the prefix
 fasts3 del s3://mybuck/logs/2015/01/12/api.log.201501122359.gz # deletes single key
 fasts3 del $(fasts3 ls s3://mybuck/logs/2015/01/12 | awk -F " " '/api.log/{print $2}') # delete all keys that have "api.log" in them
 
-#get
+# get
 fasts3 get s3://mybuck/logs/ # fetches all logs in the prefix
 
 # stream
