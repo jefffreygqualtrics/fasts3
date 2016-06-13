@@ -44,7 +44,7 @@ func formatS3Uri(bucket string, key string) string {
 
 func New(svc *s3.S3) (*S3Wrapper, error) {
 	num, err := util.GetNumFileDescriptors()
-	ch := make(chan bool, num)
+	ch := make(chan bool, num/2)
 	s3Wrapper := S3Wrapper{svc: svc, fileDescriptorSemaphore: ch}
 	return &s3Wrapper, err
 }
@@ -147,9 +147,9 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 	lines := make(chan string, 10000)
 	var wg sync.WaitGroup
 	for key := range keys {
-		w.fileDescriptorSemaphore <- true
 		wg.Add(1)
 		go func(key *ListOutput) {
+			w.fileDescriptorSemaphore <- true
 			reader, err := w.GetReader(*key.Bucket, *key.Key)
 			if err != nil {
 				panic(err)
