@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TuneOSS/fasts3v2/util"
+	"github.com/TuneOSS/fasts3/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
