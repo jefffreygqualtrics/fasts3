@@ -7,11 +7,11 @@ import (
 
 	"github.com/TuneOSS/fasts3/s3wrapper"
 	"github.com/TuneOSS/fasts3/util"
-	"github.com/alecthomas/kingpin"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/dustin/go-humanize"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
