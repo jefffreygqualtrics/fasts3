@@ -72,7 +72,7 @@ func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDat
 	for listOutput := range listChan {
 
 		if listOutput.IsPrefix {
-			fmt.Printf("%10s s3://%s/%s\n", "DIR", *listOutput.Bucket, *listOutput.FullKey)
+			fmt.Printf("%10s %s\n", "DIR", *listOutput.FullKey)
 		} else {
 			var size string
 			if humanReadable {
