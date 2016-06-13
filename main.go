@@ -1,398 +1,152 @@
 package main
 
-/**
- * A utility for doing operations on s3 faster than s3cmd
- */
 import (
-	"bufio"
 	"fmt"
-	"io/ioutil"
-	"log"
 	"os"
-	"os/user"
-	"path"
-	"regexp"
-	"runtime"
 	"strings"
-	"sync"
 
-	"github.com/AdRoll/goamz/s3"
 	"github.com/TuneOSS/fasts3/s3wrapper"
 	"github.com/TuneOSS/fasts3/util"
 	"github.com/alecthomas/kingpin"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/dustin/go-humanize"
 )
 
-type s3List []string
-
-// Set overrides kingping's Set method to validate value for s3 URIs
-func (s *s3List) Set(value string) error {
-	hasMatch, err := regexp.MatchString("^s3://", value)
-	if err != nil {
-		return err
-	}
-	if !hasMatch {
-		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb\n", *lsS3Uri)
-	} else {
-		*s = append(*s, value)
-		return nil
-	}
-}
-
-func (s *s3List) String() string {
-	return ""
-}
-
-// IsCumulative specifies S3List as a cumulative argument
-func (s *s3List) IsCumulative() bool {
-	return true
-}
-
-// S3List creates a new S3List kingpin setting
-func S3List(s kingpin.Settings) (target *[]string) {
-	target = new([]string)
-	s.SetValue((*s3List)(target))
-	return
-}
-
 var (
-	app = kingpin.New("fasts3", "Multi-threaded s3 utility")
+	app = kingpin.New("fasts3", "A faster s3 utility")
 
-	ls            = app.Command("ls", "List s3 prefixes.")
-	lsS3Uri       = ls.Arg("s3uri", "paritial s3 uri to list, ex: s3://mary/had/a/little/lamb/").Required().String()
-	lsRecurse     = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
-	lsSearchDepth = ls.Flag("search-depth", "search depth to search for work.").Default("0").Int()
-	humanReadable = ls.Flag("human-readable", "human readable key size.").Short('H').Bool()
-	withDate      = ls.Flag("with-date", "include the last modified date.").Short('d').Bool()
-
-	del            = app.Command("del", "Delete s3 keys")
-	delPrefixes    = S3List(del.Arg("prefixes", "1 or more partial s3 uris to delete delimited by space"))
-	delRecurse     = del.Flag("recursive", "Delete all keys with prefix").Short('r').Bool()
-	delSearchDepth = del.Flag("search-depth", "search depth to search for work.").Default("0").Int()
-
-	get            = app.Command("get", "Fetch files from s3")
-	getS3Uris      = S3List(get.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
-	getSearchDepth = get.Flag("search-depth", "search depth to search for work.").Default("0").Int()
-	getKeyRegex    = get.Flag("key-regex", "regex filter for keys").Default("").String()
+	ls              = app.Command("ls", "List s3 prefixes.")
+	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 uris"))
+	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
+	lsWithDate      = ls.Flag("with-date", "include the last modified date.").Short('d').Bool()
+	lsDelimiter     = ls.Flag("delimiter", "delimiter to use while listing").Default("/").String()
+	lsHumanReadable = ls.Flag("human-readable", "delimiter to use while listing").Short('H').Bool()
+	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
-	streamS3Uris         = S3List(stream.Arg("prefixes", "list of prefixes or s3Uris to retrieve"))
-	streamSearchDepth    = stream.Flag("search-depth", "search depth to search for work.").Default("0").Int()
+	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 uris"))
 	streamKeyRegex       = stream.Flag("key-regex", "regex filter for keys").Default("").String()
+	streamDelimiter      = stream.Flag("delimiter", "delimiter to use while listing").Default("/").String()
 	streamIncludeKeyName = stream.Flag("include-key-name", "regex filter for keys").Bool()
+	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
 
-	initApp = app.Command("init", "Initialize .fs3cfg file in home directory")
+	get            = app.Command("get", "Fetch files from s3")
+	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 uris"))
+	getRecurse     = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
+	getDelimiter   = get.Flag("delimiter", "delimiter to use while listing").Default("/").String()
+	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
+	getKeyRegex    = get.Flag("key-regex", "regex filter for keys").Default("").String()
 )
 
-// Ls lists directorys or keys under a prefix
-func Ls(s3Uri string, searchDepth int, isRecursive, isHumanReadable, includeDate bool, logger *log.Logger) {
-	bucket, prefix := util.ParseS3Uri(s3Uri)
-	b := util.GetBucket(bucket)
+func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
+	wrap, err := s3wrapper.New(svc)
+	if err != nil {
+		return nil, err
+	}
+	outChan := make(chan *s3wrapper.ListOutput, 10000)
+	for i := 0; i < searchDepth; i++ {
+		newS3Uris := make([]string, 0)
+		for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
+			if itm.IsPrefix {
+				newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, "/")+"/")
+			} else {
+				outChan <- itm
+			}
+		}
+		s3Uris = newS3Uris
+	}
 
-	var ch <-chan s3.Key
-	ch = s3wrapper.FastList(b, prefix, searchDepth, isRecursive)
+	go func() {
+		for itm := range wrap.ListAll(s3Uris, recursive, delimiter, keyRegex) {
+			outChan <- itm
+		}
+		close(outChan)
+	}()
 
-	for k := range ch {
-		if k.Size < 0 {
-			logger.Printf("%10s s3://%s/%s\n", "DIR", bucket, k.Key)
+	return outChan, nil
+}
+
+func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDates bool) {
+	for listOutput := range listChan {
+
+		if listOutput.IsPrefix {
+			fmt.Printf("%10s s3://%s/%s\n", "DIR", *listOutput.Bucket, *listOutput.FullKey)
 		} else {
 			var size string
-			if isHumanReadable {
-				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(k.Size)))
+			if humanReadable {
+				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(*listOutput.Size)))
 			} else {
-				size = fmt.Sprintf("%10d", k.Size)
+				size = fmt.Sprintf("%10d", *listOutput.Size)
 			}
 			date := ""
-			if includeDate {
-				date = " " + k.LastModified
+			if includeDates {
+				date = " " + (*listOutput.LastModified).Format("2006-01-02T15:04:05")
 			}
-			logger.Printf("%s%s s3://%s/%s\n", size, date, bucket, k.Key)
+			fmt.Printf("%s%s %s\n", size, date, *listOutput.FullKey)
 		}
 	}
 }
 
-// Del deletes a set of prefixes(s3 keys or partial keys
-func Del(prefixes []string, searchDepth int, isRecursive bool, logger *log.Logger) {
-	if len(*delPrefixes) == 0 {
-		logger.Println("No prefixes provided\n Usage: fasts3 del <prefix>")
-		return
+func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, includeKeyName bool, keyRegex *string) error {
+
+	listCh, err := Ls(svc, s3Uris, true, delimiter, searchDepth, keyRegex)
+	if err != nil {
+		return err
 	}
-	keys := make(chan string, len(prefixes)*2+1)
-	var b *s3.Bucket = nil
-	go func() {
-		for _, delPrefix := range prefixes {
-			bucket, prefix := util.ParseS3Uri(delPrefix)
-
-			if b == nil {
-				b = util.GetBucket(bucket)
-			}
-
-			keys <- prefix
-			if *delRecurse {
-				keyExists, err := b.Exists(prefix)
-				if err != nil {
-					log.Fatalln(err)
-				}
-
-				if keyExists {
-					keys <- prefix
-				} else if *delRecurse {
-					for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
-						keys <- key.Key
-					}
-
-				} else {
-					logger.Println("trying to delete a prefix, please add --recursive or -r to proceed")
-				}
-			}
-		}
-		close(keys)
-	}()
-
-	var wg sync.WaitGroup
-	msgs := make(chan string, 1000)
-	for i := 1; i <= 10; i++ {
-		wg.Add(1)
-		go func() {
-			batch := make([]string, 0, 100)
-			for key := range keys {
-				batch = append(batch, key)
-				if len(batch) >= 100 {
-					err := s3wrapper.DeleteMulti(b, batch)
-					if err != nil {
-						log.Fatalln(err)
-					}
-					for _, k := range batch {
-						msgs <- fmt.Sprintf("File %s Deleted\n", k)
-					}
-					batch = batch[:0]
-				}
-			}
-
-			if len(batch) > 0 {
-				err := s3wrapper.DeleteMulti(b, batch)
-				if err != nil {
-					log.Fatalln(err)
-				}
-				for _, k := range batch {
-					msgs <- fmt.Sprintf("File %s Deleted\n", k)
-				}
-			}
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(msgs)
-	}()
-	for msg := range msgs {
-		logger.Print(msg)
-	}
-}
-
-// initializes configs necessary for fasts3 utility
-func Init(logger *log.Logger) error {
-	usr, err := user.Current()
+	wrap, err := s3wrapper.New(svc)
 	if err != nil {
 		return err
 	}
 
-	fs3cfg_path := path.Join(usr.HomeDir, ".fs3cfg")
-	if _, err := os.Stat(fs3cfg_path); os.IsNotExist(err) {
-		cfg := `[default]
-access_key=<access_key>
-secret_key=<secret_key>`
-		ioutil.WriteFile(fs3cfg_path, []byte(cfg), 0644)
-		logger.Printf("created template file %s\n", fs3cfg_path)
-	} else {
-		logger.Print(".fs3cfg already exists in home directory")
+	lines := wrap.Stream(listCh, includeKeyName)
+	for line := range lines {
+		fmt.Println(line)
 	}
 
 	return nil
 }
 
-type GetRequest struct {
-	Key            string
-	OriginalPrefix string
-}
-
-// Get lists and retrieves s3 keys given a list of prefixes
-// searchDepth can also be specified to increase speed of listing
-func Get(prefixes []string, searchDepth int, keyRegex string, logger *log.Logger) {
-	if len(prefixes) == 0 {
-		logger.Println("No prefixes provided\n Usage: fasts3 get <prefix>")
-		return
-	}
-
-	var keyRegexFilter *regexp.Regexp
-	if keyRegex != "" {
-		keyRegexFilter = regexp.MustCompile(keyRegex)
-	} else {
-		keyRegexFilter = nil
-	}
-	getRequests := make(chan GetRequest, len(prefixes)*2+1)
-	var b *s3.Bucket = nil
-	go func() {
-		for _, prefix := range prefixes {
-			bucket, prefix := util.ParseS3Uri(prefix)
-
-			if b == nil {
-				b = util.GetBucket(bucket)
-			}
-
-			keyExists, err := b.Exists(prefix)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			if keyExists && prefix != "" {
-				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
-					continue
-				}
-				keyParts := strings.Split(prefix, "/")
-				ogPrefix := strings.Join(keyParts[0:len(keyParts)-1], "/") + "/"
-				getRequests <- GetRequest{Key: prefix, OriginalPrefix: ogPrefix}
-			} else {
-				for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
-					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
-						continue
-					}
-					getRequests <- GetRequest{Key: key.Key, OriginalPrefix: prefix}
-				}
-
-			}
-		}
-		close(getRequests)
-	}()
-
-	var wg sync.WaitGroup
-	msgs := make(chan string, 1000)
-	workingDirectory, err := os.Getwd()
+func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string) error {
+	listCh, err := Ls(svc, s3Uris, recurse, delimiter, searchDepth, keyRegex)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
-	for i := 1; i <= 10; i++ {
-		wg.Add(1)
-		go func() {
-			for rq := range getRequests {
-				dest := path.Join(workingDirectory, strings.Replace(rq.Key, rq.OriginalPrefix, "", 1))
-				msgs <- fmt.Sprintf("Getting %s -> %s\n", rq.Key, dest)
-				err := s3wrapper.GetToFile(b, rq.Key, dest)
-				if err != nil {
-					log.Fatalln(err)
-				}
-			}
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(msgs)
-	}()
-	for msg := range msgs {
-		logger.Print(msg)
-	}
-}
 
-// Stream takes a set of prefixes lists them and
-// streams the contents by line
-func Stream(prefixes []string, searchDepth int, keyRegex string, includeKeyName bool, logger *log.Logger) {
-	if len(prefixes) == 0 {
-		logger.Println("No prefixes provided\n Usage: fasts3 get <prefix>\n")
-		return
+	wrap, err := s3wrapper.New(svc)
+	if err != nil {
+		return err
 	}
-	keys := make(chan string, len(prefixes)*2+1)
-	var keyRegexFilter *regexp.Regexp
-	if keyRegex != "" {
-		keyRegexFilter = regexp.MustCompile(keyRegex)
-	} else {
-		keyRegexFilter = nil
+
+	downloadedFiles := wrap.GetAll(listCh)
+	for file := range downloadedFiles {
+		fmt.Printf("Downloaded %s -> %s\n", *file.FullKey, *file.Key)
 	}
-	var b *s3.Bucket = nil
-	go func() {
-		for _, prefix := range prefixes {
-			bucket, prefix := util.ParseS3Uri(prefix)
 
-			if b == nil {
-				b = util.GetBucket(bucket)
-			}
-
-			keyExists, err := b.Exists(prefix)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			if keyExists && prefix != "" {
-				if keyRegexFilter != nil && !keyRegexFilter.MatchString(prefix) {
-					continue
-				}
-				keys <- prefix
-			} else {
-				for key := range s3wrapper.FastList(b, prefix, searchDepth, true) {
-					if keyRegexFilter != nil && !keyRegexFilter.MatchString(key.Key) {
-						continue
-					}
-					keys <- key.Key
-				}
-
-			}
-		}
-		close(keys)
-	}()
-
-	var wg sync.WaitGroup
-	msgs := make(chan string, 1000)
-	for i := 1; i <= 10; i++ {
-		wg.Add(1)
-		go func() {
-			for key := range keys {
-				reader, err := s3wrapper.GetStream(b, key)
-				if err != nil {
-					panic(err)
-				}
-				for {
-					line, _, err := reader.ReadLine()
-					if err != nil {
-						if err.Error() == "EOF" {
-							break
-						} else {
-							log.Fatalln(err)
-						}
-					}
-					msg := fmt.Sprintf("%s\n", string(line))
-					if includeKeyName {
-						msg = fmt.Sprintf("[%s] %s", key, msg)
-					}
-					msgs <- msg
-				}
-			}
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(msgs)
-	}()
-	for msg := range msgs {
-		logger.Print(msg)
-	}
+	return nil
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	logBuf := bufio.NewWriter(os.Stdout)
-	logger := log.New(logBuf, "", 0)
+	app.Version("1.1.0")
+	aws_session := session.New()
+	svc := s3.New(aws_session, aws.NewConfig().WithRegion("us-east-1"))
+
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
-	case "ls":
-		Ls(*lsS3Uri, *lsSearchDepth, *lsRecurse, *humanReadable, *withDate, logger)
-	case "del":
-		Del(*delPrefixes, *lsSearchDepth, *delRecurse, logger)
-	case "get":
-		Get(*getS3Uris, *getSearchDepth, *getKeyRegex, logger)
-	case "stream":
-		Stream(*streamS3Uris, *streamSearchDepth, *streamKeyRegex, *streamIncludeKeyName, logger)
-	case "init":
-		Init(logger)
+	// Register user
+	case ls.FullCommand():
+		listCh, err := Ls(svc, *lsS3Uris, *lsRecurse, *lsDelimiter, *lsSearchDepth, nil)
+		if err != nil {
+			panic(err)
+		}
+		PrintLs(listCh, *lsHumanReadable, *lsWithDate)
+
+	case stream.FullCommand():
+		err := Stream(svc, *streamS3Uris, *streamDelimiter, *streamSearchDepth, *streamIncludeKeyName, streamKeyRegex)
+		if err != nil {
+			panic(err)
+		}
+	case get.FullCommand():
+		Get(svc, *getS3Uris, *getRecurse, *getDelimiter, *getSearchDepth, getKeyRegex)
 	}
-	logBuf.Flush()
 }

@@ -1,300 +1,223 @@
 package s3wrapper
 
 import (
-	"bufio"
-	"github.com/klauspost/compress/gzip"
+	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/AdRoll/goamz/s3"
+	"github.com/TuneOSS/fasts3v2/util"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-const defaultDelimiter string = "/"
-
-const numListRoutines int = 30
-
-const maxRetries int = 5
-
-type listWork struct {
-	prefix    string
-	delimiter string
+type ListOutput struct {
+	IsPrefix     bool
+	Size         *int64
+	Key          *string
+	LastModified *time.Time
+	Bucket       *string
+	FullKey      *string
 }
 
-// StripS3Path gets the key part from an s3 uri. The key part is everything after
-// the header (s3://<bucket>)
-func StripS3Path(key string) string {
-	key = strings.TrimRight(key, "\n")
-	if strings.Index(key, "s3://") < 0 {
-		return key // IF s3:// is not located, assume the file is already stripped
-	}
-
-	// Take the first element after splitting from tab (Should be 's3://.../.../.../...')
-	metaFilePath := strings.Split(key, "\t")[0]
-	// Clear everything off the line before 's3://' to allow taking s3cmd ls output as input
-	s3Path := metaFilePath[strings.Index(metaFilePath, "s3://"):]
-	// The bucket is the second element if you split the string 's3://<bucket>/' by '/'
-	bucket := strings.Split(s3Path, "/")[2]
-	header := "s3://" + bucket
-	return metaFilePath[strings.Index(metaFilePath, header)+len(header):]
+type S3Wrapper struct {
+	fileDescriptorSemaphore chan bool
+	svc                     *s3.S3
 }
 
-// listWorkRecursion finds all the prefixes under prefix given searchDepth, throttleChan is a channel of booleans which limits the number
-// of go routines to len(throttleChan), outChan is where the output list work is written, wg is a WaitGroup which tells the client
-// when the function is complete, isRecursive tells the lister how to list the prefixes and keys
-func listWorkRecursion(bucket *s3.Bucket, prefix string, searchDepth int, throttleChan chan bool, outChan chan s3.Key, wg *sync.WaitGroup, isRecursive bool) {
-	wg.Add(1)
-	throttleChan <- true
-	go func() {
-		// if the current depth has reached 1 we are finished
-		if searchDepth == 0 {
-			delimiter := ""
-			if !isRecursive {
-				delimiter = "/"
-			}
-			for listResp := range List(bucket, prefix, delimiter) {
-				for _, prefix := range listResp.CommonPrefixes {
-					outChan <- s3.Key{prefix, "", -1, "", "", s3.Owner{}}
-				}
-				for _, key := range listResp.Contents {
-					outChan <- key
-				}
-			}
-		} else {
-			for res := range List(bucket, prefix, defaultDelimiter) {
-				for _, key := range res.Contents {
-					outChan <- key
-				}
-
-				if len(res.CommonPrefixes) != 0 {
-					for _, newPfx := range res.CommonPrefixes {
-						// release the current routine we are using as we will be blocked in the recursive call
-						<-throttleChan
-						listWorkRecursion(bucket, newPfx, searchDepth-1, throttleChan, outChan, wg, isRecursive)
-						throttleChan <- true
-					}
-				} else { // if there are no common prefixes this is the end of the depth for this prefix
-					listWorkRecursion(bucket, prefix, 0, throttleChan, outChan, wg, isRecursive)
-				}
-			}
-		}
-		wg.Done()
-		<-throttleChan
-	}()
+// parseS3Uri parses a s3 uri into it's bucket and prefix
+func parseS3Uri(s3Uri string) (bucket string, prefix string) {
+	s3UriParts := strings.Split(s3Uri, "/")
+	prefix = strings.Join(s3UriParts[3:], "/")
+	bucket = s3UriParts[2]
+	return bucket, prefix
 }
 
-// FastList does a recursive threaded operation to generate a list of prefixes based on prefix
-// by searching down the searchDepth using DELIMITER as a delimiter and isRecursive to tell
-// whether or not to use a delimiter when listing
-func FastList(bucket *s3.Bucket, prefix string, searchDepth int, isRecursive bool) chan s3.Key {
-	results := make(chan s3.Key, 100000)
-	throttleChan := make(chan bool, numListRoutines)
+func formatS3Uri(bucket string, key string) string {
+	return fmt.Sprintf("s3://%s", path.Join(bucket, key))
+}
+
+func New(svc *s3.S3) (*S3Wrapper, error) {
+	num, err := util.GetNumFileDescriptors()
+	ch := make(chan bool, num)
+	s3Wrapper := S3Wrapper{svc: svc, fileDescriptorSemaphore: ch}
+	return &s3Wrapper, err
+}
+func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
+	ch := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
-	listWorkRecursion(bucket, prefix, searchDepth, throttleChan, results, &wg, isRecursive)
+	for _, s3Uri := range s3Uris {
+		wg.Add(1)
+		go func(s3Uri string) {
+			for itm := range w.List(s3Uri, recursive, delimiter, keyRegex) {
+				ch <- itm
+			}
+			wg.Done()
+		}(s3Uri)
+	}
 	go func() {
 		wg.Wait()
-		close(results)
+		close(ch)
 	}()
-	return results
-}
 
-// List function with retry and support for listing all keys in a prefix
-func List(bucket *s3.Bucket, prefix string, delimiter string) <-chan *s3.ListResp {
-	ch := make(chan *s3.ListResp, 10000)
-	go func(pfix string, del string) {
-		defer close(ch)
-		isTruncated := true
-		nextMarker := ""
-		for isTruncated {
-			attempts := 0
-			for {
-				attempts++
-				res, err := bucket.List(pfix, del, nextMarker, 1000)
-				if err != nil {
-					if err.Error() == "runtime error: index out of range" {
-						break
-					}
-					if attempts >= maxRetries {
-						log.Panic(err)
-					}
-
-					time.Sleep(time.Second * 3)
-				} else {
-					ch <- res
-					if len(res.Contents) > 0 {
-						nextMarker = res.Contents[len(res.Contents)-1].Key
-					} else if len(res.CommonPrefixes) > 0 {
-						nextMarker = res.CommonPrefixes[len(res.CommonPrefixes)-1]
-					}
-					isTruncated = res.IsTruncated
-					break
-				}
-			}
-		}
-	}(prefix, delimiter)
 	return ch
 }
 
-func Put(bucket *s3.Bucket, key string, contents []byte, contentType string, permissions s3.ACL, options s3.Options) error {
-	attempts := 0
-	for {
-		attempts++
-		err := bucket.Put(key, contents, contentType, permissions, options)
-		if err == nil {
-			return nil
-		}
-		if attempts >= maxRetries && err != nil {
-			return err
-		}
-
-		time.Sleep(time.Second * 3)
+func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
+	bucket, prefix := parseS3Uri(s3Uri)
+	if recursive {
+		delimiter = ""
 	}
-}
-
-func Get(bucket *s3.Bucket, key string) ([]byte, error) {
-	attempts := 0
-	for {
-		attempts++
-		buff, err := bucket.Get(key)
-		if err == nil {
-			return buff, nil
-		}
-		if attempts >= maxRetries && err != nil {
-			return nil, err
-		}
+	var keyRegexFilter *regexp.Regexp = nil
+	if keyRegex != nil {
+		keyRegexFilter = regexp.MustCompile(*keyRegex)
 	}
 
-}
-
-func GetReader(bucket *s3.Bucket, key string) (io.ReadCloser, error) {
-	attempts := 0
-	for {
-		attempts++
-		reader, err := bucket.GetReader(key)
-		if err == nil {
-			return reader, nil
-		}
-		if attempts >= maxRetries && err != nil {
-			return nil, err
-		}
+	params := &s3.ListObjectsV2Input{
+		Bucket:       aws.String(bucket), // Required
+		Delimiter:    aws.String(delimiter),
+		EncodingType: aws.String(s3.EncodingTypeUrl),
+		FetchOwner:   aws.Bool(false),
+		MaxKeys:      aws.Int64(1000),
+		Prefix:       aws.String(prefix),
 	}
 
+	ch := make(chan *ListOutput, 10000)
+	go func() {
+		w.fileDescriptorSemaphore <- true
+		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+			for _, prefix := range page.CommonPrefixes {
+				if *prefix.Prefix != "/" {
+					formattedKey := formatS3Uri(bucket, *prefix.Prefix)
+					ch <- &ListOutput{
+						IsPrefix:     true,
+						Key:          prefix.Prefix,
+						FullKey:      &formattedKey,
+						LastModified: nil,
+						Size:         nil,
+						Bucket:       &bucket,
+					}
+				}
+			}
+
+			for _, key := range page.Contents {
+				formattedKey := formatS3Uri(bucket, *key.Key)
+				if keyRegexFilter != nil && !keyRegexFilter.MatchString(formattedKey) {
+					continue
+				}
+				ch <- &ListOutput{
+					IsPrefix:     false,
+					Key:          key.Key,
+					FullKey:      &formattedKey,
+					LastModified: key.LastModified,
+					Size:         key.Size,
+					Bucket:       &bucket,
+				}
+			}
+			return true
+		})
+		<-w.fileDescriptorSemaphore
+		close(ch)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	return ch
 }
 
-func GetStream(bucket *s3.Bucket, key string) (*bufio.Reader, error) {
-	bts, err := GetReader(bucket, key)
+func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) {
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}
+	resp, err := w.svc.GetObject(params)
 	if err != nil {
 		return nil, err
 	}
-	return getReaderByExt(bts, key)
+	return resp.Body, nil
+
 }
-
-// getReaderByExt is a factory for reader based on the extension of the key
-func getReaderByExt(reader io.ReadCloser, key string) (*bufio.Reader, error) {
-	ext := path.Ext(key)
-	if ext == ".gz" || ext == ".gzip" {
-		gzReader, err := gzip.NewReader(reader)
-		if err != nil {
-			return bufio.NewReader(reader), nil
-		}
-		return bufio.NewReader(gzReader), nil
-	} else {
-		return bufio.NewReader(reader), nil
-	}
-}
-
-// createPathIfNotExists takes a path and creates
-// it if it doesn't exist
-func createPathIfNotExists(path string) error {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		err := os.MkdirAll(path, 0755)
-		if err != nil {
-			return err
-		}
-	} else {
-		return nil
-	}
-	return nil
-}
-
-// GetToFile takes a bucket and key and puts the bytes to a file
-// in specified by dest
-func GetToFile(bucket *s3.Bucket, key string, dest string) error {
-	destParts := strings.Split(dest, "/")
-	path := strings.Join(destParts[0:len(destParts)-1], "/")
-
-	if err := createPathIfNotExists(path); err != nil {
-		return err
-	}
-
-	bts, err := Get(bucket, key)
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(dest, bts, 0644)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func toDeleteStruct(keys []string) s3.Delete {
-	objs := make([]s3.Object, 0)
-	for _, key := range keys {
-		if key != "" {
-			objs = append(objs, s3.Object{Key: strings.TrimSpace(key)})
-		}
-	}
-	return s3.Delete{false, objs}
-}
-
-// DeleteMulti  deletes multiple keys
-func DeleteMulti(bucket *s3.Bucket, keys []string) error {
-	attempts := 0
-	for {
-		attempts++
-		err := bucket.DelMulti(toDeleteStruct(keys))
-		if err != nil {
-			if attempts >= maxRetries {
-				return err
+func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan string {
+	lines := make(chan string, 10000)
+	var wg sync.WaitGroup
+	for key := range keys {
+		w.fileDescriptorSemaphore <- true
+		wg.Add(1)
+		go func(key *ListOutput) {
+			reader, err := w.GetReader(*key.Bucket, *key.Key)
+			if err != nil {
+				panic(err)
+			}
+			ext_reader, err := util.GetReaderByExt(reader, *key.Key)
+			if err != nil {
+				panic(err)
 			}
 
-			time.Sleep(time.Second * 3)
-		} else {
-			break
-		}
+			for {
+				line, _, err := ext_reader.ReadLine()
+				if err != nil {
+					if err.Error() == "EOF" {
+						break
+					} else {
+						log.Fatalln(err)
+					}
+				}
+				lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+			}
+			<-w.fileDescriptorSemaphore
+			wg.Done()
+		}(key)
 	}
-	return nil
+	go func() {
+		wg.Wait()
+		close(lines)
+	}()
+
+	return lines
+
 }
 
-// min function for integers
-func intMin(x, y int) int {
-	if x < y {
-		return x
+func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
+	listOut := make(chan *ListOutput, 10000)
+	var wg sync.WaitGroup
+	for key := range keys {
+		wg.Add(1)
+		go func(k *ListOutput) {
+			w.fileDescriptorSemaphore <- true
+			if !k.IsPrefix {
+				parts := strings.Split(*k.Key, "/")
+				dir := strings.Join(parts[0:len(parts)-1], "/")
+				util.CreatePathIfNotExists(dir)
+				reader, err := w.GetReader(*k.Bucket, *k.Key)
+				if err != nil {
+					panic(err)
+				}
+				outFile, err := os.Create(*k.Key)
+				if err != nil {
+					panic(err)
+				}
+				defer outFile.Close()
+				_, err = io.Copy(outFile, reader)
+				if err != nil {
+					panic(err)
+				}
+				listOut <- k
+			}
+			<-w.fileDescriptorSemaphore
+			wg.Done()
+		}(key)
 	}
-	return y
-}
 
-func intMax(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
-}
+	go func() {
+		wg.Wait()
+		close(listOut)
+	}()
 
-// partition partitions list into list of lists where len(lists) <= partitions
-func partition(list []listWork, partitionSize int) [][]listWork {
-	partitions := [][]listWork{}
-	step := intMax(len(list)/partitionSize, 1)
-	for i := 0; i < len(list); i += step {
-		outerBound := intMin(len(list), i+step)
-		partitions = append(partitions, list[i:outerBound])
-	}
-	return partitions
+	return listOut
 }

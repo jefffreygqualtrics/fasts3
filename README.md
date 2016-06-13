@@ -1,7 +1,7 @@
 ![FastS3](http://i.imgur.com/A42azaA.png)
 ---
 
-Fast s3 utility is a faster version of s3cmd's ls and del functions ideal for listing and deleting buckets containing millions of keys.
+Fast s3 utility is a faster version of s3cmd's ls and get functions ideal for listing and deleting buckets containing millions of keys.
 
 #Installation
 
@@ -31,96 +31,83 @@ export AWS_SECRET_ACCESS_KEY=<secret_key>
 #Usage
 
 ```
-usage: fasts3 <command> [<flags>] [<args> ...]
+usage: fasts3 [<flags>] <command> [<args> ...]
 
-Multi-threaded s3 utility
+A faster s3 utility
 
 Flags:
-  --help  Show help.
+  --help  Show context-sensitive help (also try --help-long and --help-man).
 
 Commands:
-  help [<command>]
-    Show help for a command.
+  help [<command>...]
+    Show help.
 
-  ls [<flags>] <s3uri>
+  ls [<flags>] [<s3Uris>...]
     List s3 prefixes.
 
-  del [<flags>] [<prefixes>]
-    Delete s3 keys
-
-  get [<flags>] [<prefixes>]
-    Fetch files from s3
-
-  stream [<flags>] [<prefixes>]
+  stream [<flags>] [<s3Uris>...]
     Stream s3 files to stdout
 
-  init
-    Initialize .fs3cfg file in home directory
+  get [<flags>] [<s3Uris>...]
+    Fetch files from s3
+
 
 ```
 
 #####ls
 ```
-usage: fasts3 [<flags>] ls [<flags>] <s3uri>
+usage: fasts3 ls [<flags>] [<s3Uris>...]
 
 List s3 prefixes.
 
 Flags:
-  --help            Show help.
-  -r, --recursive   Get all keys for this prefix.
-  --search-depth=0  search depth to search for work.
-  -H, --human-readable  human readable key size.
-  -d, --with-date   include the last modified date.
+      --help            Show context-sensitive help (also try --help-long and
+                        --help-man).
+  -r, --recursive       Get all keys for this prefix.
+  -d, --with-date       include the last modified date.
+      --delimiter="/"   delimiter to use while listing
+  -H, --human-readable  delimiter to use while listing
+      --search-depth=0  Dictates how many prefix groups to walk down
 
 Args:
-  <s3uri>  paritial s3 uri to list, ex: s3://mary/had/a/little/lamb/
-
-```
-
-#####del
-```
-usage: fasts3 [<flags>] del [<flags>] [<prefixes>]
-
-Delete s3 keys
-
-Flags:
-  --help            Show help.
-  -r, --recursive   Delete all keys with prefix
-  --search-depth=0  search depth to search for work.
-
-Args:
-  [<prefixes>]  1 or more partial s3 uris to delete delimited by space
+  [<s3Uris>]  list of s3 uris
 
 ```
 
 #####get
 ```
-usage: fasts3 get [<flags>] [<prefixes>]
+usage: fasts3 get [<flags>] [<s3Uris>...]
 
 Fetch files from s3
 
 Flags:
-  --search-depth=0  search depth to search for work.
-  --key-regex=KEY-REGEX
-                    regex filter for keys
+      --help            Show context-sensitive help (also try --help-long and
+                        --help-man).
+  -r, --recursive       Get all keys for this prefix.
+      --delimiter="/"   delimiter to use while listing
+      --search-depth=0  Dictates how many prefix groups to walk down
+      --key-regex=""    regex filter for keys
 
 Args:
-  [<prefixes>]  list of prefixes or s3Uris to retrieve
+  [<s3Uris>]  list of s3 uris
 ```
 
 #####stream
 ```
-usage: fasts3 stream [<flags>] [<prefixes>]
+usage: fasts3 stream [<flags>] [<s3Uris>...]
 
 Stream s3 files to stdout
 
 Flags:
-  --search-depth=0  search depth to search for work.
-  --key-regex=KEY-REGEX
-                    regex filter for keys
+  --help              Show context-sensitive help (also try --help-long and
+                      --help-man).
+  --key-regex=""      regex filter for keys
+  --delimiter="/"     delimiter to use while listing
+  --include-key-name  regex filter for keys
+  --search-depth=0    Dictates how many prefix groups to walk down
 
 Args:
-  [<prefixes>]  list of prefixes or s3Uris to retrieve
+  [<s3Uris>]  list of s3 uris
 ```
 
 ####Using search depth to *go* faster
