@@ -12,17 +12,9 @@ sudo make install
 
 #Configuration
 
-use `fasts3 init` command  which will create a template file in ~/.fs3cfg
+use `aws configure` command from the aws cli tool (https://aws.amazon.com/cli/) which will create the necessary config files in ~/.aws/credentials
 
-```ini
-[default]
-access_key=<access_key>
-secret_key=<secret_key>
-```
-
-fill in the template file with your s3 credentials
-
-alternatively you can set these environment variables:
+alternatively you can set these environment variables which will take precedence over the credentials file:
 ```bash
 export AWS_ACCESS_KEY_ID=<access_key>
 export AWS_SECRET_ACCESS_KEY=<secret_key>
