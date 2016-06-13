@@ -10,4 +10,4 @@ clean:
 	 rm -f fasts3
 
 install:
-	 cp -f bin/fasts3 /usr/local/bin/fasts3
+	 cp -f fasts3 /usr/local/bin/fasts3
