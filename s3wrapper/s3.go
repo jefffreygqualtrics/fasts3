@@ -168,7 +168,11 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 						log.Fatalln(err)
 					}
 				}
-				lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+				if includeKeyName {
+					lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+				} else {
+					lines <- fmt.Sprintf("%s", string(line))
+				}
 			}
 			<-w.fileDescriptorSemaphore
 			wg.Done()
