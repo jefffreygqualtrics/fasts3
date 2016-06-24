@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -42,11 +43,10 @@ func formatS3Uri(bucket string, key string) string {
 	return fmt.Sprintf("s3://%s", path.Join(bucket, key))
 }
 
-func New(svc *s3.S3) (*S3Wrapper, error) {
-	num, err := util.GetNumFileDescriptors()
-	ch := make(chan bool, num/2)
+func New(svc *s3.S3) *S3Wrapper {
+	ch := make(chan bool, runtime.NumCPU()*4)
 	s3Wrapper := S3Wrapper{svc: svc, concurrencySemaphore: ch}
-	return &s3Wrapper, err
+	return &s3Wrapper
 }
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
 	ch := make(chan *ListOutput, 10000)

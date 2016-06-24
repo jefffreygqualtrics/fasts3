@@ -41,10 +41,7 @@ var (
 )
 
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
-	wrap, err := s3wrapper.New(svc)
-	if err != nil {
-		return nil, err
-	}
+	wrap := s3wrapper.New(svc)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
 	go func() {
 		for i := 0; i < searchDepth; i++ {
@@ -95,10 +92,7 @@ func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, incl
 	if err != nil {
 		return err
 	}
-	wrap, err := s3wrapper.New(svc)
-	if err != nil {
-		return err
-	}
+	wrap := s3wrapper.New(svc)
 
 	lines := wrap.Stream(listCh, includeKeyName)
 	for line := range lines {
@@ -114,10 +108,7 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 		return err
 	}
 
-	wrap, err := s3wrapper.New(svc)
-	if err != nil {
-		return err
-	}
+	wrap := s3wrapper.New(svc)
 
 	downloadedFiles := wrap.GetAll(listCh)
 	for file := range downloadedFiles {
