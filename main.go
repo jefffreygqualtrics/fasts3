@@ -46,19 +46,19 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 		return nil, err
 	}
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
-	for i := 0; i < searchDepth; i++ {
-		newS3Uris := make([]string, 0)
-		for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
-			if itm.IsPrefix {
-				newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, "/")+"/")
-			} else {
-				outChan <- itm
-			}
-		}
-		s3Uris = newS3Uris
-	}
-
 	go func() {
+		for i := 0; i < searchDepth; i++ {
+			newS3Uris := make([]string, 0)
+			for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
+				if itm.IsPrefix {
+					newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, "/")+"/")
+				} else {
+					outChan <- itm
+				}
+			}
+			s3Uris = newS3Uris
+		}
+
 		for itm := range wrap.ListAll(s3Uris, recursive, delimiter, keyRegex) {
 			outChan <- itm
 		}

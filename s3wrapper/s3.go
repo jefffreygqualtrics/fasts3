@@ -26,8 +26,8 @@ type ListOutput struct {
 }
 
 type S3Wrapper struct {
-	fileDescriptorSemaphore chan bool
-	svc                     *s3.S3
+	concurrencySemaphore chan bool
+	svc                  *s3.S3
 }
 
 // parseS3Uri parses a s3 uri into it's bucket and prefix
@@ -45,7 +45,7 @@ func formatS3Uri(bucket string, key string) string {
 func New(svc *s3.S3) (*S3Wrapper, error) {
 	num, err := util.GetNumFileDescriptors()
 	ch := make(chan bool, num/2)
-	s3Wrapper := S3Wrapper{svc: svc, fileDescriptorSemaphore: ch}
+	s3Wrapper := S3Wrapper{svc: svc, concurrencySemaphore: ch}
 	return &s3Wrapper, err
 }
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
@@ -89,7 +89,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 
 	ch := make(chan *ListOutput, 10000)
 	go func() {
-		w.fileDescriptorSemaphore <- true
+		w.concurrencySemaphore <- true
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
 				if *prefix.Prefix != "/" {
@@ -121,7 +121,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 			}
 			return true
 		})
-		<-w.fileDescriptorSemaphore
+		<-w.concurrencySemaphore
 		close(ch)
 		if err != nil {
 			panic(err)
@@ -149,7 +149,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 	for key := range keys {
 		wg.Add(1)
 		go func(key *ListOutput) {
-			w.fileDescriptorSemaphore <- true
+			w.concurrencySemaphore <- true
 			reader, err := w.GetReader(*key.Bucket, *key.Key)
 			if err != nil {
 				panic(err)
@@ -174,7 +174,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 					lines <- fmt.Sprintf("%s", string(line))
 				}
 			}
-			<-w.fileDescriptorSemaphore
+			<-w.concurrencySemaphore
 			wg.Done()
 		}(key)
 	}
@@ -193,7 +193,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 	for key := range keys {
 		wg.Add(1)
 		go func(k *ListOutput) {
-			w.fileDescriptorSemaphore <- true
+			w.concurrencySemaphore <- true
 			if !k.IsPrefix {
 				parts := strings.Split(*k.Key, "/")
 				dir := strings.Join(parts[0:len(parts)-1], "/")
@@ -213,7 +213,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 				}
 				listOut <- k
 			}
-			<-w.fileDescriptorSemaphore
+			<-w.concurrencySemaphore
 			wg.Done()
 		}(key)
 	}
