@@ -31,9 +31,8 @@ type S3Wrapper struct {
 	svc                  *s3.S3
 }
 
-// parseS3Uri parses a s3 uri into it's bucket and prefix
+// parseS3Uri parses a s3 uri into its bucket and prefix
 func parseS3Uri(s3Uri string) (bucket string, prefix string) {
-	// TODO: does this assume '/' as a delimiter?
 	s3UriParts := strings.Split(s3Uri, "/")
 	prefix = strings.Join(s3UriParts[3:], "/")
 	bucket = s3UriParts[2]
@@ -41,13 +40,11 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 }
 
 func formatS3Uri(bucket string, key string) string {
-	// TODO: does this assume '/' as a delimiter?
 	return fmt.Sprintf("s3://%s", path.Join(bucket, key))
 }
 
 func New(svc *s3.S3) *S3Wrapper {
-	// TODO: concurrency should be based on GOMAXPROCS, not NumCPU
-	ch := make(chan bool, runtime.NumCPU()*4)
+	ch := make(chan bool, runtime.GOMAXPROCS(0))
 	s3Wrapper := S3Wrapper{svc: svc, concurrencySemaphore: ch}
 	return &s3Wrapper
 }
@@ -96,8 +93,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 		w.concurrencySemaphore <- true
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
-				// TODO: does this assume '/' as a delimiter?
-				if *prefix.Prefix != "/" {
+				if *prefix.Prefix != delimiter {
 					formattedKey := formatS3Uri(bucket, *prefix.Prefix)
 					ch <- &ListOutput{
 						IsPrefix:     true,
@@ -244,7 +240,6 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 			w.concurrencySemaphore <- true
 			if !k.IsPrefix {
 				kBucket, kPrefix := parseS3Uri(*k.FullKey)
-				// TODO: does this assume '/' as a delimiter?
 				sourcePath := "/" + path.Join(kBucket, kPrefix)
 
 				// trim common path prefixes from k.Key and sourcePrefix
