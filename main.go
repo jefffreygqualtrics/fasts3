@@ -10,34 +10,42 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/dustin/go-humanize"
-	"gopkg.in/alecthomas/kingpin.v2"
+	humanize "github.com/dustin/go-humanize"
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
 	app = kingpin.New("fasts3", "A faster s3 utility")
 
 	ls              = app.Command("ls", "List s3 prefixes.")
-	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 uris"))
+	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 URIs"))
 	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
-	lsWithDate      = ls.Flag("with-date", "include the last modified date.").Short('d').Bool()
-	lsDelimiter     = ls.Flag("delimiter", "delimiter to use while listing").Default("/").String()
-	lsHumanReadable = ls.Flag("human-readable", "delimiter to use while listing").Short('H').Bool()
-	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
+	lsWithDate      = ls.Flag("with-date", "Include the last modified date.").Short('d').Bool()
+	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
+	lsHumanReadable = ls.Flag("human-readable", "Delimiter to use while listing.").Short('H').Bool()
+	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
-	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 uris"))
-	streamKeyRegex       = stream.Flag("key-regex", "regex filter for keys").Default("").String()
-	streamDelimiter      = stream.Flag("delimiter", "delimiter to use while listing").Default("/").String()
-	streamIncludeKeyName = stream.Flag("include-key-name", "regex filter for keys").Bool()
-	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
+	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs"))
+	streamKeyRegex       = stream.Flag("key-regex", "Regex filter for keys").Default("").String()
+	streamDelimiter      = stream.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
+	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
+	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	get            = app.Command("get", "Fetch files from s3")
-	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 uris"))
+	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs"))
 	getRecurse     = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
-	getDelimiter   = get.Flag("delimiter", "delimiter to use while listing").Default("/").String()
-	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down").Default("0").Int()
-	getKeyRegex    = get.Flag("key-regex", "regex filter for keys").Default("").String()
+	getDelimiter   = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
+	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
+	getKeyRegex    = get.Flag("key-regex", "Regex filter for keys.").Default("").String()
+
+	cp            = app.Command("cp", "Copy files within s3")
+	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs"))
+	cpRecurse     = cp.Flag("recursive", "Copy all keys for this prefix.").Short('r').Bool()
+	cpFlat        = cp.Flag("flat", "Copy all source files into a flat destination folder (vs. corresponding subfolders)").Short('f').Bool()
+	cpDelimiter   = cp.Flag("delimiter", "Delimiter to use while copying.").Default("/").String()
+	cpSearchDepth = cp.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
+	cpKeyRegex    = cp.Flag("key-regex", "Regex filter for keys.").Default("").String()
 )
 
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
@@ -118,8 +126,29 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 	return nil
 }
 
+func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string, flat bool) error {
+	if len(s3Uris) != 2 {
+		fmt.Println("fasts3: error: must include one source and one destination URI")
+		os.Exit(1)
+	}
+
+	listCh, err := Ls(svc, []string{s3Uris[0]}, recurse, delimiter, searchDepth, keyRegex)
+	if err != nil {
+		return err
+	}
+
+	wrap := s3wrapper.New(svc)
+
+	copiedFiles := wrap.CopyAll(listCh, s3Uris[0], s3Uris[1], delimiter, recurse, flat)
+	for file := range copiedFiles {
+		fmt.Printf("Copied %s -> %s%s%s\n", *file.FullKey, strings.TrimRight(s3Uris[1], delimiter), delimiter, *file.Key)
+	}
+
+	return nil
+}
+
 func main() {
-	app.Version("1.1.0")
+	app.Version("1.2.0")
 	aws_session := session.New()
 	svc := s3.New(aws_session, aws.NewConfig().WithRegion("us-east-1"))
 
@@ -139,5 +168,9 @@ func main() {
 		}
 	case get.FullCommand():
 		Get(svc, *getS3Uris, *getRecurse, *getDelimiter, *getSearchDepth, getKeyRegex)
+	case cp.FullCommand():
+		if err := Cp(svc, *cpS3Uris, *cpRecurse, *cpDelimiter, *cpSearchDepth, cpKeyRegex, *cpFlat); err != nil {
+			panic(err)
+		}
 	}
 }
