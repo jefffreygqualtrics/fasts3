@@ -22,7 +22,7 @@ var (
 	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	lsWithDate      = ls.Flag("with-date", "Include the last modified date.").Short('d').Bool()
 	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
-	lsHumanReadable = ls.Flag("human-readable", "Delimiter to use while listing.").Short('H').Bool()
+	lsHumanReadable = ls.Flag("human-readable", "Output human-readable object sizes.").Short('H').Bool()
 	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
@@ -52,6 +52,8 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 	wrap := s3wrapper.New(svc)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
 	go func() {
+		defer close(outChan)
+
 		for i := 0; i < searchDepth; i++ {
 			newS3Uris := make([]string, 0)
 			for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
@@ -67,7 +69,6 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 		for itm := range wrap.ListAll(s3Uris, recursive, delimiter, keyRegex) {
 			outChan <- itm
 		}
-		close(outChan)
 	}()
 
 	return outChan, nil
@@ -75,7 +76,6 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 
 func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDates bool) {
 	for listOutput := range listChan {
-
 		if listOutput.IsPrefix {
 			fmt.Printf("%10s %s\n", "DIR", *listOutput.FullKey)
 		} else {
