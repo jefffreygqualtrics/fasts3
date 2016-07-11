@@ -44,9 +44,18 @@ func formatS3Uri(bucket string, key string) string {
 }
 
 func New(svc *s3.S3) *S3Wrapper {
-	ch := make(chan struct{}, runtime.GOMAXPROCS(0))
-	s3Wrapper := S3Wrapper{svc: svc, concurrencySemaphore: ch}
-	return &s3Wrapper
+	// set concurrency limit to GOMAXPROCS if set, else default to 4x CPUs
+	var ch chan struct{}
+	if os.Getenv("GOMAXPROCS") != "" {
+		ch = make(chan struct{}, runtime.GOMAXPROCS(0))
+	} else {
+		ch = make(chan struct{}, 4*runtime.NumCPU())
+	}
+
+	return &S3Wrapper{
+		svc:                  svc,
+		concurrencySemaphore: ch,
+	}
 }
 
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {

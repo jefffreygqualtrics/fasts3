@@ -14,21 +14,22 @@ sudo make install
 
 #Configuration
 
-use `aws configure` command from the aws cli tool (https://aws.amazon.com/cli/) which will create the necessary config files in ~/.aws/credentials
+Use `aws configure` command from the aws cli tool (https://aws.amazon.com/cli/) which will create the necessary config files in `~/.aws/credentials`.
 
-alternatively you can set these environment variables which will take precedence over the credentials file:
+Alternatively you can set these environment variables which will take precedence over the credentials file:
 ```bash
 export AWS_ACCESS_KEY_ID=<access_key>
 export AWS_SECRET_ACCESS_KEY=<secret_key>
 ```
 
 #Usage
-use:
+Use:
 ```
 fasts3 --help
 fasts3 <cmd> --help
 ```
-####Using search depth to *go* faster
+
+###Using search depth to *go* faster
 Many times you know the structure of your s3 bucket, and this can be used to optimize listings. Say you have a structure like so:
 ```bash
 fasts3 ls s3://mybuck/logs/
@@ -40,9 +41,12 @@ DIR s3://mybuck/logs/2014/
 DIR s3://mybuck/logs/2015/
 ```
 
-doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories its own thread, increasing throughput.
+Doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories its own thread, increasing throughput.
 
-####Examples
+###Concurrency
+The concurrency level of s3 command execution can be tweaked based on your usage needs. By default, `4*NumCPU` s3 commands will be executed concurrently, which is ideal based on our benchmarks. If you want to override this value, set `GOMAXPROCS` in your environment to set the concurrency level: `env GOMAXPROCS=64 fasts3 ls -r s3://mybuck/logs/` will execute 64 s3 commands concurrently.
+
+###Examples
 ```bash
 # ls
 fasts3 ls s3://mybucket/ # lists top level directories and keys
@@ -63,14 +67,14 @@ fasts3 cp -r -f s3://mybuck/logs/ s3://otherbuck/all-logs/ # copies all source f
 ```
 
 ###Completion
-Bash and ZSH completion are available, to install:
+Bash and ZSH completion are available.
 
-for bash:
+To install for bash:
 ```
 source completion.sh
 ```
 
-for zsh:
+For zsh:
 ```
 source completion.zsh
 ```
