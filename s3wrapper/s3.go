@@ -27,7 +27,7 @@ type ListOutput struct {
 }
 
 type S3Wrapper struct {
-	concurrencySemaphore chan bool
+	concurrencySemaphore chan struct{}
 	svc                  *s3.S3
 }
 
@@ -45,11 +45,11 @@ func formatS3Uri(bucket string, key string) string {
 
 func New(svc *s3.S3) *S3Wrapper {
 	// set concurrency limit to GOMAXPROCS if set, else default to 4x CPUs
-	var ch chan bool
+	var ch chan struct{}
 	if os.Getenv("GOMAXPROCS") != "" {
-		ch = make(chan bool, runtime.GOMAXPROCS(0))
+		ch = make(chan struct{}, runtime.GOMAXPROCS(0))
 	} else {
-		ch = make(chan bool, 4*runtime.NumCPU())
+		ch = make(chan struct{}, 4*runtime.NumCPU())
 	}
 
 	return &S3Wrapper{
@@ -64,10 +64,10 @@ func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, k
 	for _, s3Uri := range s3Uris {
 		wg.Add(1)
 		go func(s3Uri string) {
+			defer wg.Done()
 			for itm := range w.List(s3Uri, recursive, delimiter, keyRegex) {
 				ch <- itm
 			}
-			wg.Done()
 		}(s3Uri)
 	}
 	go func() {
@@ -99,7 +99,10 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 
 	ch := make(chan *ListOutput, 10000)
 	go func() {
-		w.concurrencySemaphore <- true
+		defer close(ch)
+		w.concurrencySemaphore <- struct{}{}
+		defer func() { <-w.concurrencySemaphore }()
+
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
 				if *prefix.Prefix != delimiter {
@@ -131,8 +134,6 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 			}
 			return true
 		})
-		<-w.concurrencySemaphore
-		close(ch)
 		if err != nil {
 			panic(err)
 		}
@@ -159,7 +160,10 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 	for key := range keys {
 		wg.Add(1)
 		go func(key *ListOutput) {
-			w.concurrencySemaphore <- true
+			defer wg.Done()
+			w.concurrencySemaphore <- struct{}{}
+			defer func() { <-w.concurrencySemaphore }()
+
 			reader, err := w.GetReader(*key.Bucket, *key.Key)
 			if err != nil {
 				panic(err)
@@ -184,8 +188,6 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 					lines <- fmt.Sprintf("%s", string(line))
 				}
 			}
-			<-w.concurrencySemaphore
-			wg.Done()
 		}(key)
 	}
 	go func() {
@@ -203,7 +205,10 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 	for key := range keys {
 		wg.Add(1)
 		go func(k *ListOutput) {
-			w.concurrencySemaphore <- true
+			defer wg.Done()
+			w.concurrencySemaphore <- struct{}{}
+			defer func() { <-w.concurrencySemaphore }()
+
 			if !k.IsPrefix {
 				// TODO: this assumes '/' as a delimiter
 				parts := strings.Split(*k.Key, "/")
@@ -224,8 +229,6 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 				}
 				listOut <- k
 			}
-			<-w.concurrencySemaphore
-			wg.Done()
 		}(key)
 	}
 
@@ -246,7 +249,10 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 	for key := range keys {
 		wg.Add(1)
 		go func(k *ListOutput) {
-			w.concurrencySemaphore <- true
+			defer wg.Done()
+			w.concurrencySemaphore <- struct{}{}
+			defer func() { <-w.concurrencySemaphore }()
+
 			if !k.IsPrefix {
 				kBucket, kPrefix := parseS3Uri(*k.FullKey)
 				sourcePath := "/" + path.Join(kBucket, kPrefix)
@@ -279,8 +285,6 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 					listOut <- k
 				}
 			}
-			<-w.concurrencySemaphore
-			wg.Done()
 		}(key)
 	}
 
