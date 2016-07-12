@@ -44,7 +44,7 @@ DIR s3://mybuck/logs/2015/
 Doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories its own thread, increasing throughput.
 
 ###Concurrency
-The concurrency level of s3 command execution can be tweaked based on your usage needs. By default, `4*NumCPU` s3 commands will be executed concurrently, which is ideal based on our benchmarks. If you want to override this value, set `GOMAXPROCS` in your environment to set the concurrency level: `env GOMAXPROCS=64 fasts3 ls -r s3://mybuck/logs/` will execute 64 s3 commands concurrently.
+The concurrency level of s3 command execution can be tweaked based on your usage needs. By default, `4*NumCPU` s3 commands will be executed concurrently, which is ideal based on our benchmarks. If you want to override this value, set `GOMAXPROCS` in your environment to set the concurrency level: `GOMAXPROCS=64 fasts3 ls -r s3://mybuck/logs/` will execute 64 s3 commands concurrently.
 
 ###Examples
 ```bash

@@ -95,7 +95,6 @@ func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDat
 }
 
 func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, includeKeyName bool, keyRegex *string) error {
-
 	listCh, err := Ls(svc, s3Uris, true, delimiter, searchDepth, keyRegex)
 	if err != nil {
 		return err
