@@ -78,3 +78,7 @@ For zsh:
 ```
 source completion.zsh
 ```
+
+Demo:
+
+![autocomplete demo for zsh](autocomplete_demo.gif)
