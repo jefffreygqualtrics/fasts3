@@ -58,7 +58,7 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 			newS3Uris := make([]string, 0)
 			for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
 				if itm.IsPrefix {
-					newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, "/")+"/")
+					newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, delimiter)+delimiter)
 				} else {
 					outChan <- itm
 				}
@@ -147,7 +147,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.2.1")
+	app.Version("1.2.2")
 	aws_session := session.New()
 	svc := s3.New(aws_session, aws.NewConfig().WithRegion("us-east-1"))
 
