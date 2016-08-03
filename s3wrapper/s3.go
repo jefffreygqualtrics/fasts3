@@ -216,10 +216,10 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 				dir := strings.Join(parts[0:len(parts)-1], "/")
 				util.CreatePathIfNotExists(dir)
 				reader, err := w.GetReader(*k.Bucket, *k.Key)
-				defer reader.Close()
 				if err != nil {
 					panic(err)
 				}
+				defer reader.Close()
 				outFile, err := os.Create(*k.Key)
 				if err != nil {
 					panic(err)
