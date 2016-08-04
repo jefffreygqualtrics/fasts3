@@ -157,46 +157,47 @@ func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) 
 func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan string {
 	lines := make(chan string, 10000)
 	var wg sync.WaitGroup
-	for key := range keys {
-		wg.Add(1)
-		go func(key *ListOutput) {
-			defer wg.Done()
-			w.concurrencySemaphore <- struct{}{}
-			defer func() { <-w.concurrencySemaphore }()
+	go func() {
+		for key := range keys {
+			wg.Add(1)
+			go func(key *ListOutput) {
+				defer wg.Done()
+				w.concurrencySemaphore <- struct{}{}
+				defer func() { <-w.concurrencySemaphore }()
 
-			reader, err := w.GetReader(*key.Bucket, *key.Key)
-			if err != nil {
-				panic(err)
-			}
-			ext_reader, err := util.GetReaderByExt(reader, *key.Key)
-			if err != nil {
-				panic(err)
-			}
-
-			for {
-				line, _, err := ext_reader.ReadLine()
+				reader, err := w.GetReader(*key.Bucket, *key.Key)
 				if err != nil {
-					if err.Error() == "EOF" {
-						break
+					panic(err)
+				}
+				ext_reader, err := util.GetReaderByExt(reader, *key.Key)
+				if err != nil {
+					panic(err)
+				}
+
+				for {
+					line, _, err := ext_reader.ReadLine()
+					if err != nil {
+						if err.Error() == "EOF" {
+							break
+						} else {
+							log.Fatalln(err)
+						}
+					}
+					if includeKeyName {
+						lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
 					} else {
-						log.Fatalln(err)
+						lines <- fmt.Sprintf("%s", string(line))
 					}
 				}
-				if includeKeyName {
-					lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
-				} else {
-					lines <- fmt.Sprintf("%s", string(line))
-				}
-			}
-		}(key)
-	}
-	go func() {
-		wg.Wait()
-		close(lines)
+			}(key)
+		}
+		go func() {
+			wg.Wait()
+			close(lines)
+		}()
 	}()
 
 	return lines
-
 }
 
 func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
@@ -218,6 +219,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
 				if err != nil {
 					panic(err)
 				}
+				defer reader.Close()
 				outFile, err := os.Create(*k.Key)
 				if err != nil {
 					panic(err)
