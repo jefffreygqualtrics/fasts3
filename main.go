@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/TuneOSS/fasts3/s3wrapper"
@@ -51,6 +52,43 @@ var (
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
 	wrap := s3wrapper.New(svc)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
+
+	slashRegex := regexp.MustCompile("/")
+	bucketFixedS3Uris := make([]string, 0, 1000)
+
+	// transforms uris with partial or no bucket (e.g. s3://)
+	// into a listable uri
+	for _, uri := range s3Uris {
+		// filters uris without bucket or partial bucket specified
+		if len(slashRegex.FindAllString(uri, -1)) == 2 {
+			buckets, err := wrap.ListBuckets(uri)
+			if err != nil {
+				return nil, err
+			}
+			for _, bucket := range buckets {
+				// add the bucket back to the list of s3 uris in cases where
+				// we are searching beyond the bucket
+				if recursive || searchDepth > 0 {
+					bucketFixedS3Uris = append(bucketFixedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
+				} else {
+					key := ""
+					fullKey := s3wrapper.FormatS3Uri(bucket, "")
+					outChan <- &s3wrapper.ListOutput{
+						IsPrefix:     true,
+						Key:          &key,
+						FullKey:      &fullKey,
+						LastModified: nil,
+						Size:         nil,
+						Bucket:       &bucket,
+					}
+				}
+			}
+		} else {
+			bucketFixedS3Uris = append(bucketFixedS3Uris, uri)
+		}
+	}
+	s3Uris = bucketFixedS3Uris
+
 	go func() {
 		defer close(outChan)
 

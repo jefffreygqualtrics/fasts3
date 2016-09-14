@@ -39,7 +39,7 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	return bucket, prefix
 }
 
-func formatS3Uri(bucket string, key string) string {
+func FormatS3Uri(bucket string, key string) string {
 	return fmt.Sprintf("s3://%s", path.Join(bucket, key))
 }
 
@@ -106,7 +106,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
 				if *prefix.Prefix != delimiter {
-					formattedKey := formatS3Uri(bucket, *prefix.Prefix)
+					formattedKey := FormatS3Uri(bucket, *prefix.Prefix)
 					ch <- &ListOutput{
 						IsPrefix:     true,
 						Key:          prefix.Prefix,
@@ -119,7 +119,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 			}
 
 			for _, key := range page.Contents {
-				formattedKey := formatS3Uri(bucket, *key.Key)
+				formattedKey := FormatS3Uri(bucket, *key.Key)
 				if keyRegexFilter != nil && !keyRegexFilter.MatchString(formattedKey) {
 					continue
 				}
@@ -296,4 +296,35 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 	}()
 
 	return listOut
+}
+
+// ListBucketsInput is an empty struct, therefore
+// we can define it globally here
+var listBucketsParams *s3.ListBucketsInput
+
+// ListBuckets returns a list of bucket names and does a prefix
+// filter based on s3Uri (of the form s3://<bucket-prefix>)
+func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
+
+	bucket, _ := parseS3Uri(s3Uri)
+	results, err := w.svc.ListBuckets(listBucketsParams)
+	buckets := make([]string, 0, len(results.Buckets))
+	if err != nil {
+		return buckets, err
+	}
+
+	bucketRegex := regexp.MustCompile("^" + bucket)
+	// no need to regex filter if bucket is empty
+	if len(s3Uri) <= 0 {
+		for _, bucket := range results.Buckets {
+			buckets = append(buckets, *bucket.Name)
+		}
+	} else {
+		for _, bucket := range results.Buckets {
+			if bucketRegex.MatchString(*bucket.Name) {
+				buckets = append(buckets, *bucket.Name)
+			}
+		}
+	}
+	return buckets, nil
 }
