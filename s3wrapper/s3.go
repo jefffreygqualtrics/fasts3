@@ -302,16 +302,15 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 // filter based on s3Uri (of the form s3://<bucket-prefix>)
 func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
 
-	bucket, _ := parseS3Uri(s3Uri)
+	bucketPrefix, _ := parseS3Uri(s3Uri)
 	results, err := w.svc.ListBuckets(&s3.ListBucketsInput{})
 	if err != nil {
 		return nil, err
 	}
 
 	buckets := make([]string, 0, len(results.Buckets))
-	bucketRegex := regexp.MustCompile("^" + bucket)
 	for _, bucket := range results.Buckets {
-		if *bucket.Name != "" && !bucketRegex.MatchString(*bucket.Name) {
+		if *bucket.Name != "" && !strings.HasPrefix(*bucket.Name, bucketPrefix) {
 			continue
 		}
 		buckets = append(buckets, *bucket.Name)
