@@ -19,7 +19,7 @@ var (
 	app = kingpin.New("fasts3", "A faster s3 utility")
 
 	ls              = app.Command("ls", "List s3 prefixes.")
-	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 URIs"))
+	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 URIs").Required())
 	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	lsWithDate      = ls.Flag("with-date", "Include the last modified date.").Short('d').Bool()
 	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
@@ -27,21 +27,21 @@ var (
 	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
-	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs"))
+	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs").Required())
 	streamKeyRegex       = stream.Flag("key-regex", "Regex filter for keys").Default("").String()
 	streamDelimiter      = stream.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
 	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	get            = app.Command("get", "Fetch files from s3")
-	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs"))
+	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs").Required())
 	getRecurse     = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	getDelimiter   = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 	getKeyRegex    = get.Flag("key-regex", "Regex filter for keys.").Default("").String()
 
 	cp            = app.Command("cp", "Copy files within s3")
-	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs"))
+	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs").Required())
 	cpRecurse     = cp.Flag("recursive", "Copy all keys for this prefix.").Short('r').Bool()
 	cpFlat        = cp.Flag("flat", "Copy all source files into a flat destination folder (vs. corresponding subfolders)").Short('f').Bool()
 	cpDelimiter   = cp.Flag("delimiter", "Delimiter to use while copying.").Default("/").String()
