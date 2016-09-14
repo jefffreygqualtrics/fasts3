@@ -54,12 +54,14 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
 
 	slashRegex := regexp.MustCompile("/")
-	bucketFixedS3Uris := make([]string, 0, 1000)
+	bucketExpandedS3Uris := make([]string, 0, 1000)
 
 	// transforms uris with partial or no bucket (e.g. s3://)
 	// into a listable uri
 	for _, uri := range s3Uris {
 		// filters uris without bucket or partial bucket specified
+		// s3 key/prefix queries will always have 3 slashes, where-as
+		// bucket queries will always have 2 (e.g. s3://<bucket>/<prefix-or-key> vs s3://<bucket-prefix>)
 		if len(slashRegex.FindAllString(uri, -1)) == 2 {
 			buckets, err := wrap.ListBuckets(uri)
 			if err != nil {
@@ -69,7 +71,7 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 				// add the bucket back to the list of s3 uris in cases where
 				// we are searching beyond the bucket
 				if recursive || searchDepth > 0 {
-					bucketFixedS3Uris = append(bucketFixedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
+					bucketExpandedS3Uris = append(bucketExpandedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
 				} else {
 					key := ""
 					fullKey := s3wrapper.FormatS3Uri(bucket, "")
@@ -84,10 +86,10 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 				}
 			}
 		} else {
-			bucketFixedS3Uris = append(bucketFixedS3Uris, uri)
+			bucketExpandedS3Uris = append(bucketExpandedS3Uris, uri)
 		}
 	}
-	s3Uris = bucketFixedS3Uris
+	s3Uris = bucketExpandedS3Uris
 
 	go func() {
 		defer close(outChan)

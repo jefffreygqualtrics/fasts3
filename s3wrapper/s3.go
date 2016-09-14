@@ -298,33 +298,23 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 	return listOut
 }
 
-// ListBucketsInput is an empty struct, therefore
-// we can define it globally here
-var listBucketsParams *s3.ListBucketsInput
-
 // ListBuckets returns a list of bucket names and does a prefix
 // filter based on s3Uri (of the form s3://<bucket-prefix>)
 func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
 
 	bucket, _ := parseS3Uri(s3Uri)
-	results, err := w.svc.ListBuckets(listBucketsParams)
-	buckets := make([]string, 0, len(results.Buckets))
+	results, err := w.svc.ListBuckets(&s3.ListBucketsInput{})
 	if err != nil {
-		return buckets, err
+		return nil, err
 	}
 
+	buckets := make([]string, 0, len(results.Buckets))
 	bucketRegex := regexp.MustCompile("^" + bucket)
-	// no need to regex filter if bucket is empty
-	if len(s3Uri) <= 0 {
-		for _, bucket := range results.Buckets {
-			buckets = append(buckets, *bucket.Name)
+	for _, bucket := range results.Buckets {
+		if *bucket.Name != "" && !bucketRegex.MatchString(*bucket.Name) {
+			continue
 		}
-	} else {
-		for _, bucket := range results.Buckets {
-			if bucketRegex.MatchString(*bucket.Name) {
-				buckets = append(buckets, *bucket.Name)
-			}
-		}
+		buckets = append(buckets, *bucket.Name)
 	}
 	return buckets, nil
 }
