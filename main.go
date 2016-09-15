@@ -196,7 +196,6 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(*aws_session.Config.Region)
 	svc := s3.New(aws_session, aws.NewConfig())
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
