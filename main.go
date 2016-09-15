@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/TuneOSS/fasts3/s3wrapper"
@@ -18,7 +19,7 @@ var (
 	app = kingpin.New("fasts3", "A faster s3 utility")
 
 	ls              = app.Command("ls", "List s3 prefixes.")
-	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 URIs"))
+	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of s3 URIs").Required())
 	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	lsWithDate      = ls.Flag("with-date", "Include the last modified date.").Short('d').Bool()
 	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
@@ -26,21 +27,21 @@ var (
 	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
-	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs"))
+	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs").Required())
 	streamKeyRegex       = stream.Flag("key-regex", "Regex filter for keys").Default("").String()
 	streamDelimiter      = stream.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
 	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
 	get            = app.Command("get", "Fetch files from s3")
-	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs"))
+	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs").Required())
 	getRecurse     = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	getDelimiter   = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 	getKeyRegex    = get.Flag("key-regex", "Regex filter for keys.").Default("").String()
 
 	cp            = app.Command("cp", "Copy files within s3")
-	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs"))
+	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs").Required())
 	cpRecurse     = cp.Flag("recursive", "Copy all keys for this prefix.").Short('r').Bool()
 	cpFlat        = cp.Flag("flat", "Copy all source files into a flat destination folder (vs. corresponding subfolders)").Short('f').Bool()
 	cpDelimiter   = cp.Flag("delimiter", "Delimiter to use while copying.").Default("/").String()
@@ -51,6 +52,45 @@ var (
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
 	wrap := s3wrapper.New(svc)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
+
+	slashRegex := regexp.MustCompile("/")
+	bucketExpandedS3Uris := make([]string, 0, 1000)
+
+	// transforms uris with partial or no bucket (e.g. s3://)
+	// into a listable uri
+	for _, uri := range s3Uris {
+		// filters uris without bucket or partial bucket specified
+		// s3 key/prefix queries will always have 3 slashes, where-as
+		// bucket queries will always have 2 (e.g. s3://<bucket>/<prefix-or-key> vs s3://<bucket-prefix>)
+		if len(slashRegex.FindAllString(uri, -1)) == 2 {
+			buckets, err := wrap.ListBuckets(uri)
+			if err != nil {
+				return nil, err
+			}
+			for _, bucket := range buckets {
+				// add the bucket back to the list of s3 uris in cases where
+				// we are searching beyond the bucket
+				if recursive || searchDepth > 0 {
+					bucketExpandedS3Uris = append(bucketExpandedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
+				} else {
+					key := ""
+					fullKey := s3wrapper.FormatS3Uri(bucket, "")
+					outChan <- &s3wrapper.ListOutput{
+						IsPrefix:     true,
+						Key:          &key,
+						FullKey:      &fullKey,
+						LastModified: nil,
+						Size:         nil,
+						Bucket:       &bucket,
+					}
+				}
+			}
+		} else {
+			bucketExpandedS3Uris = append(bucketExpandedS3Uris, uri)
+		}
+	}
+	s3Uris = bucketExpandedS3Uris
+
 	go func() {
 		defer close(outChan)
 
@@ -147,7 +187,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.2.3")
+	app.Version("1.2.4")
 	aws_session := session.New()
 	svc := s3.New(aws_session, aws.NewConfig().WithRegion("us-east-1"))
 
