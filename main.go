@@ -71,7 +71,15 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 				// add the bucket back to the list of s3 uris in cases where
 				// we are searching beyond the bucket
 				if recursive || searchDepth > 0 {
-					bucketExpandedS3Uris = append(bucketExpandedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
+					resp, err := svc.GetBucketLocation(&s3.GetBucketLocationInput{Bucket: aws.String(bucket)})
+					if err != nil {
+						return nil, err
+					}
+					// if the region is location constrained and not in the region we specified in our config
+					// then don't list it, otherwise we will get an error from the AWS API
+					if resp.LocationConstraint == nil || *resp.LocationConstraint == *svc.Client.Config.Region {
+						bucketExpandedS3Uris = append(bucketExpandedS3Uris, s3wrapper.FormatS3Uri(bucket, ""))
+					}
 				} else {
 					key := ""
 					fullKey := s3wrapper.FormatS3Uri(bucket, "")
