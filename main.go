@@ -187,9 +187,17 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.2.5")
-	aws_session := session.New()
-	svc := s3.New(aws_session, aws.NewConfig().WithRegion("us-east-1"))
+	app.Version("1.2.6")
+	aws_session, err := session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(*aws_session.Config.Region)
+	svc := s3.New(aws_session, aws.NewConfig())
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	// Register user
