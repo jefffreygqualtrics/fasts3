@@ -33,12 +33,13 @@ var (
 	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
 	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 
-	get            = app.Command("get", "Fetch files from s3")
-	getS3Uris      = util.S3List(get.Arg("s3Uris", "list of s3 URIs").Required())
-	getRecurse     = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
-	getDelimiter   = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
-	getSearchDepth = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
-	getKeyRegex    = get.Flag("key-regex", "Regex filter for keys.").Default("").String()
+	get             = app.Command("get", "Fetch files from s3")
+	getS3Uris       = util.S3List(get.Arg("s3Uris", "list of s3 URIs").Required())
+	getRecurse      = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
+	getDelimiter    = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
+	getSearchDepth  = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
+	getKeyRegex     = get.Flag("key-regex", "Regex filter for keys.").Default("").String()
+	getSkipExisting = get.Flag("skip-existing", "Skips downloading keys which already exist on the local file system").Bool()
 
 	cp            = app.Command("cp", "Copy files within s3")
 	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of s3 URIs").Required())
@@ -157,7 +158,7 @@ func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, incl
 	return nil
 }
 
-func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string) error {
+func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string, skipExisting bool) error {
 	listCh, err := Ls(svc, s3Uris, recurse, delimiter, searchDepth, keyRegex)
 	if err != nil {
 		return err
@@ -165,7 +166,7 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 
 	wrap := s3wrapper.New(svc)
 
-	downloadedFiles := wrap.GetAll(listCh)
+	downloadedFiles := wrap.GetAll(listCh, skipExisting)
 	for file := range downloadedFiles {
 		fmt.Printf("Downloaded %s -> %s\n", *file.FullKey, *file.Key)
 	}
@@ -195,7 +196,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.2.7")
+	app.Version("1.2.8")
 	aws_session, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -221,7 +222,7 @@ func main() {
 			panic(err)
 		}
 	case get.FullCommand():
-		Get(svc, *getS3Uris, *getRecurse, *getDelimiter, *getSearchDepth, getKeyRegex)
+		Get(svc, *getS3Uris, *getRecurse, *getDelimiter, *getSearchDepth, getKeyRegex, *getSkipExisting)
 	case cp.FullCommand():
 		if err := Cp(svc, *cpS3Uris, *cpRecurse, *cpDelimiter, *cpSearchDepth, cpKeyRegex, *cpFlat); err != nil {
 			panic(err)
