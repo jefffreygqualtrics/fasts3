@@ -200,38 +200,40 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 	return lines
 }
 
-func (w *S3Wrapper) GetAll(keys chan *ListOutput) chan *ListOutput {
+func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListOutput {
 	listOut := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
 	for key := range keys {
-		wg.Add(1)
-		go func(k *ListOutput) {
-			defer wg.Done()
-			w.concurrencySemaphore <- struct{}{}
-			defer func() { <-w.concurrencySemaphore }()
+		if _, err := os.Stat(*key.Key); skipExisting == false || os.IsNotExist(err) {
+			wg.Add(1)
+			go func(k *ListOutput) {
+				defer wg.Done()
+				w.concurrencySemaphore <- struct{}{}
+				defer func() { <-w.concurrencySemaphore }()
 
-			if !k.IsPrefix {
-				// TODO: this assumes '/' as a delimiter
-				parts := strings.Split(*k.Key, "/")
-				dir := strings.Join(parts[0:len(parts)-1], "/")
-				util.CreatePathIfNotExists(dir)
-				reader, err := w.GetReader(*k.Bucket, *k.Key)
-				if err != nil {
-					panic(err)
+				if !k.IsPrefix {
+					// TODO: this assumes '/' as a delimiter
+					parts := strings.Split(*k.Key, "/")
+					dir := strings.Join(parts[0:len(parts)-1], "/")
+					util.CreatePathIfNotExists(dir)
+					reader, err := w.GetReader(*k.Bucket, *k.Key)
+					if err != nil {
+						panic(err)
+					}
+					defer reader.Close()
+					outFile, err := os.Create(*k.Key)
+					if err != nil {
+						panic(err)
+					}
+					defer outFile.Close()
+					_, err = io.Copy(outFile, reader)
+					if err != nil {
+						panic(err)
+					}
+					listOut <- k
 				}
-				defer reader.Close()
-				outFile, err := os.Create(*k.Key)
-				if err != nil {
-					panic(err)
-				}
-				defer outFile.Close()
-				_, err = io.Copy(outFile, reader)
-				if err != nil {
-					panic(err)
-				}
-				listOut <- k
-			}
-		}(key)
+			}(key)
+		}
 	}
 
 	go func() {
