@@ -25,7 +25,7 @@ Alternatively you can set these environment variables which will take precedence
 ```bash
 export AWS_ACCESS_KEY_ID=<access_key>
 export AWS_SECRET_ACCESS_KEY=<secret_key>
-export AWS_REGION=<region(e.g. us-east-1)>
+export AWS_REGION=us-east-1
 ```
 
 #Usage
