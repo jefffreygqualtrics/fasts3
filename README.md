@@ -7,9 +7,6 @@ Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal f
 
 ```bash
 go get github.com/TuneOSS/fasts3
-cd $GOPATH/src/github.com/TuneOSS/fasts3
-make
-sudo make install
 ```
 
 #Configuration
