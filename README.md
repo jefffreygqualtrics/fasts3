@@ -13,10 +13,19 @@ go get github.com/TuneOSS/fasts3
 
 Use `aws configure` command from the aws cli tool (https://aws.amazon.com/cli/) which will create the necessary config files in `~/.aws/credentials`.
 
+add your region to your credentials file to support tab-completion of buckets:
+```ini
+[default]
+aws_access_key_id=xxxx
+aws_secret_access_key=xxxx
+region=us-east-1
+```
+
 Alternatively you can set these environment variables which will take precedence over the credentials file:
 ```bash
 export AWS_ACCESS_KEY_ID=<access_key>
 export AWS_SECRET_ACCESS_KEY=<secret_key>
+export AWS_REGION=<region(e.g. us-east-1)>
 ```
 
 #Usage
