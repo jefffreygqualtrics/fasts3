@@ -25,6 +25,7 @@ var (
 	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	lsHumanReadable = ls.Flag("human-readable", "Output human-readable object sizes.").Short('H').Bool()
 	lsSearchDepth   = ls.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
+	lsKeyRegex      = ls.Flag("key-regex", "Regex filter for keys.").Default("").String()
 
 	stream               = app.Command("stream", "Stream s3 files to stdout")
 	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of s3 URIs").Required())
@@ -196,7 +197,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.2.8")
+	app.Version("1.2.9")
 	aws_session, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
@@ -210,7 +211,7 @@ func main() {
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	// Register user
 	case ls.FullCommand():
-		listCh, err := Ls(svc, *lsS3Uris, *lsRecurse, *lsDelimiter, *lsSearchDepth, nil)
+		listCh, err := Ls(svc, *lsS3Uris, *lsRecurse, *lsDelimiter, *lsSearchDepth, lsKeyRegex)
 		if err != nil {
 			panic(err)
 		}
