@@ -320,14 +320,14 @@ func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
 	return buckets, nil
 }
 
-const MAX_KEYS_PER_DELETE_OBJECTS_REQUEST = 1000
+const maxKeysPerDeleteObjectsRequest = 1000
 
 // DeleteObjects deletes all keys in the given keys channel
 func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 	listOut := make(chan *ListOutput, 1e4)
 	go func() {
-		objects := make([]*s3.ObjectIdentifier, 0, MAX_KEYS_PER_DELETE_OBJECTS_REQUEST)
-		listOutCache := make([]*ListOutput, 0, MAX_KEYS_PER_DELETE_OBJECTS_REQUEST)
+		objects := make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
+		listOutCache := make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
 		params := &s3.DeleteObjectsInput{
 			Bucket: aws.String(""),
 			Delete: &s3.Delete{},
@@ -340,10 +340,10 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 			if *params.Bucket == "" {
 				params.Bucket = aws.String(*item.Bucket)
 			}
-			// only MAX_KEYS_PER_DELETE_OBJECTS_REQUEST objects can fit in
+			// only maxKeysPerDeleteObjectsRequest objects can fit in
 			// one DeleteObjects request also if the bucket changes we cannot
 			// put it in the same request so we flush and start a new one
-			if len(objects) >= MAX_KEYS_PER_DELETE_OBJECTS_REQUEST || *params.Bucket != *item.Bucket {
+			if len(objects) >= maxKeysPerDeleteObjectsRequest || *params.Bucket != *item.Bucket {
 				// flush
 				params.Delete = &s3.Delete{
 					Objects: objects,
@@ -359,9 +359,9 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 				}
 
 				// reset
-				listOutCache = make([]*ListOutput, 0, 1000)
+				listOutCache = make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
 				params.Bucket = aws.String(*item.Bucket)
-				objects = make([]*s3.ObjectIdentifier, 0, 1000)
+				objects = make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
 			}
 			objects = append(objects, &s3.ObjectIdentifier{
 				Key: item.Key,
