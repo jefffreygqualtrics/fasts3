@@ -335,6 +335,9 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 				if *params.Bucket == "" {
 					params.Bucket = aws.String(*item.Bucket)
 				}
+				// only 1000 objects can fit in one DeleteObjects request
+				// also if the bucket changes we cannot put it in the same
+				// request so we flush and start a new one
 				if len(objects) >= 1000 || *params.Bucket != *item.Bucket {
 					// flush
 					params.Delete = &s3.Delete{
@@ -345,9 +348,12 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 						panic(err)
 					}
 
+					// write the keys deleted to the results channel
 					for _, cacheItem := range listOutCache {
 						listOut <- cacheItem
 					}
+
+					// reset
 					listOutCache = make([]*ListOutput, 0, 1000)
 					params.Bucket = aws.String(*item.Bucket)
 					objects = make([]*s3.ObjectIdentifier, 0, 1000)
@@ -358,7 +364,7 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 				listOutCache = append(listOutCache, item)
 			}
 		}
-		// flush
+		// flush again for any remaining keys
 		params.Delete = &s3.Delete{
 			Objects: objects,
 		}
