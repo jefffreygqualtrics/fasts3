@@ -333,7 +333,7 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 			Delete: &s3.Delete{},
 		}
 		for item := range keys {
-			if !item.IsPrefix {
+			if item.IsPrefix {
 				continue
 			}
 
