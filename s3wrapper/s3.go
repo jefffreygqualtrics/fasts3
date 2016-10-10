@@ -320,49 +320,53 @@ func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
 	return buckets, nil
 }
 
+const MAX_KEYS_PER_DELETE_OBJECTS_REQUEST = 1000
+
 // DeleteObjects deletes all keys in the given keys channel
 func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 	listOut := make(chan *ListOutput, 1e4)
 	go func() {
-		objects := make([]*s3.ObjectIdentifier, 0, 1000)
-		listOutCache := make([]*ListOutput, 0, 1000)
+		objects := make([]*s3.ObjectIdentifier, 0, MAX_KEYS_PER_DELETE_OBJECTS_REQUEST)
+		listOutCache := make([]*ListOutput, 0, MAX_KEYS_PER_DELETE_OBJECTS_REQUEST)
 		params := &s3.DeleteObjectsInput{
 			Bucket: aws.String(""),
 			Delete: &s3.Delete{},
 		}
 		for item := range keys {
 			if !item.IsPrefix {
-				if *params.Bucket == "" {
-					params.Bucket = aws.String(*item.Bucket)
-				}
-				// only 1000 objects can fit in one DeleteObjects request
-				// also if the bucket changes we cannot put it in the same
-				// request so we flush and start a new one
-				if len(objects) >= 1000 || *params.Bucket != *item.Bucket {
-					// flush
-					params.Delete = &s3.Delete{
-						Objects: objects,
-					}
-					_, err := w.svc.DeleteObjects(params)
-					if err != nil {
-						panic(err)
-					}
-
-					// write the keys deleted to the results channel
-					for _, cacheItem := range listOutCache {
-						listOut <- cacheItem
-					}
-
-					// reset
-					listOutCache = make([]*ListOutput, 0, 1000)
-					params.Bucket = aws.String(*item.Bucket)
-					objects = make([]*s3.ObjectIdentifier, 0, 1000)
-				}
-				objects = append(objects, &s3.ObjectIdentifier{
-					Key: item.Key,
-				})
-				listOutCache = append(listOutCache, item)
+				continue
 			}
+
+			if *params.Bucket == "" {
+				params.Bucket = aws.String(*item.Bucket)
+			}
+			// only MAX_KEYS_PER_DELETE_OBJECTS_REQUEST objects can fit in
+			// one DeleteObjects request also if the bucket changes we cannot
+			// put it in the same request so we flush and start a new one
+			if len(objects) >= MAX_KEYS_PER_DELETE_OBJECTS_REQUEST || *params.Bucket != *item.Bucket {
+				// flush
+				params.Delete = &s3.Delete{
+					Objects: objects,
+				}
+				_, err := w.svc.DeleteObjects(params)
+				if err != nil {
+					panic(err)
+				}
+
+				// write the keys deleted to the results channel
+				for _, cacheItem := range listOutCache {
+					listOut <- cacheItem
+				}
+
+				// reset
+				listOutCache = make([]*ListOutput, 0, 1000)
+				params.Bucket = aws.String(*item.Bucket)
+				objects = make([]*s3.ObjectIdentifier, 0, 1000)
+			}
+			objects = append(objects, &s3.ObjectIdentifier{
+				Key: item.Key,
+			})
+			listOutCache = append(listOutCache, item)
 		}
 		// flush again for any remaining keys
 		params.Delete = &s3.Delete{
