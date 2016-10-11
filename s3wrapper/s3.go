@@ -319,3 +319,69 @@ func (w *S3Wrapper) ListBuckets(s3Uri string) ([]string, error) {
 	}
 	return buckets, nil
 }
+
+const maxKeysPerDeleteObjectsRequest = 1000
+
+// DeleteObjects deletes all keys in the given keys channel
+func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
+	listOut := make(chan *ListOutput, 1e4)
+	go func() {
+		objects := make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
+		listOutCache := make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
+		params := &s3.DeleteObjectsInput{
+			Bucket: aws.String(""),
+			Delete: &s3.Delete{},
+		}
+		for item := range keys {
+			if item.IsPrefix {
+				continue
+			}
+
+			if *params.Bucket == "" {
+				params.Bucket = aws.String(*item.Bucket)
+			}
+			// only maxKeysPerDeleteObjectsRequest objects can fit in
+			// one DeleteObjects request also if the bucket changes we cannot
+			// put it in the same request so we flush and start a new one
+			if len(objects) >= maxKeysPerDeleteObjectsRequest || *params.Bucket != *item.Bucket {
+				// flush
+				params.Delete = &s3.Delete{
+					Objects: objects,
+				}
+				_, err := w.svc.DeleteObjects(params)
+				if err != nil {
+					panic(err)
+				}
+
+				// write the keys deleted to the results channel
+				for _, cacheItem := range listOutCache {
+					listOut <- cacheItem
+				}
+
+				// reset
+				listOutCache = make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
+				params.Bucket = aws.String(*item.Bucket)
+				objects = make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
+			}
+			objects = append(objects, &s3.ObjectIdentifier{
+				Key: item.Key,
+			})
+			listOutCache = append(listOutCache, item)
+		}
+		// flush again for any remaining keys
+		params.Delete = &s3.Delete{
+			Objects: objects,
+		}
+		_, err := w.svc.DeleteObjects(params)
+		if err != nil {
+			panic(err)
+		}
+
+		for _, cacheItem := range listOutCache {
+			listOut <- cacheItem
+		}
+		close(listOut)
+	}()
+
+	return listOut
+}
