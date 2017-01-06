@@ -325,10 +325,14 @@ const maxKeysPerDeleteObjectsRequest = 1000
 // DeleteObjects deletes all keys in the given keys channel
 func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 	listOut := make(chan *ListOutput, 1e4)
+	var wg sync.WaitGroup
+
 	for i := 0; i < cap(w.concurrencySemaphore); i++ {
+		wg.Add(1)
 		go func() {
 			w.concurrencySemaphore <- struct{}{}
 			defer func() { <-w.concurrencySemaphore }()
+			defer wg.Done()
 			objects := make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
 			listOutCache := make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
 			params := &s3.DeleteObjectsInput{
@@ -383,9 +387,13 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 			for _, cacheItem := range listOutCache {
 				listOut <- cacheItem
 			}
-			close(listOut)
 		}()
 	}
+
+	go func() {
+		wg.Wait()
+		close(listOut)
+	}()
 
 	return listOut
 }
