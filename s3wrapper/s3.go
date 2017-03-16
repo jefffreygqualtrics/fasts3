@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -106,10 +107,14 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
 				if *prefix.Prefix != delimiter {
-					formattedKey := FormatS3Uri(bucket, *prefix.Prefix)
+					escapedPrefix, err := url.QueryUnescape(*prefix.Prefix)
+					if err != nil {
+						escapedPrefix = *prefix.Prefix
+					}
+					formattedKey := FormatS3Uri(bucket, escapedPrefix)
 					ch <- &ListOutput{
 						IsPrefix:     true,
-						Key:          prefix.Prefix,
+						Key:          &escapedPrefix,
 						FullKey:      &formattedKey,
 						LastModified: nil,
 						Size:         nil,
@@ -119,13 +124,17 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 			}
 
 			for _, key := range page.Contents {
-				formattedKey := FormatS3Uri(bucket, *key.Key)
+				escapedKey, err := url.QueryUnescape(*key.Key)
+				if err != nil {
+					escapedKey = *key.Key
+				}
+				formattedKey := FormatS3Uri(bucket, escapedKey)
 				if keyRegexFilter != nil && !keyRegexFilter.MatchString(formattedKey) {
 					continue
 				}
 				ch <- &ListOutput{
 					IsPrefix:     false,
-					Key:          key.Key,
+					Key:          &escapedKey,
 					FullKey:      &formattedKey,
 					LastModified: key.LastModified,
 					Size:         key.Size,
