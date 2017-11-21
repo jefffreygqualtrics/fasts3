@@ -184,7 +184,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 					bufExtReader := bufio.NewReader(extReader)
 
 					for {
-						line, _, err := bufExtReader.ReadLine()
+						line, err := bufExtReader.ReadBytes('\n')
 
 						if err != nil && err.Error() != "EOF" {
 							log.Fatalln(err)
