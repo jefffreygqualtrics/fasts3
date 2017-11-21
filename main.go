@@ -33,6 +33,8 @@ var (
 	streamDelimiter      = stream.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
 	streamSearchDepth    = stream.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
+	streamOrdered        = stream.Flag("ordered", "Reads the keys in-order, not mixing output from different keys. Note: this will reduce the parallelism to 1").Bool()
+	streamRaw            = stream.Flag("raw", "Raw file output, output will not be line delimited or uncompressed").Bool()
 
 	get             = app.Command("get", "Fetch files from S3")
 	getS3Uris       = util.S3List(get.Arg("s3Uris", "list of S3 URIs").Required())
@@ -151,16 +153,19 @@ func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDat
 	}
 }
 
-func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, includeKeyName bool, keyRegex *string) error {
+func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, includeKeyName bool, keyRegex *string, ordered bool, raw bool) error {
 	listCh, err := Ls(svc, s3Uris, true, delimiter, searchDepth, keyRegex)
 	if err != nil {
 		return err
 	}
 	wrap := s3wrapper.New(svc)
+	if ordered {
+		wrap.WithMaxConcurrency(1)
+	}
 
-	lines := wrap.Stream(listCh, includeKeyName)
+	lines := wrap.Stream(listCh, includeKeyName, raw)
 	for line := range lines {
-		fmt.Println(line)
+		fmt.Print(line)
 	}
 
 	return nil
@@ -239,7 +244,7 @@ func main() {
 		PrintLs(listCh, *lsHumanReadable, *lsWithDate)
 
 	case stream.FullCommand():
-		err := Stream(svc, *streamS3Uris, *streamDelimiter, *streamSearchDepth, *streamIncludeKeyName, streamKeyRegex)
+		err := Stream(svc, *streamS3Uris, *streamDelimiter, *streamSearchDepth, *streamIncludeKeyName, streamKeyRegex, *streamOrdered, *streamRaw)
 		if err != nil {
 			panic(err)
 		}

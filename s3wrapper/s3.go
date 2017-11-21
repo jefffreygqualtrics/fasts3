@@ -1,6 +1,7 @@
 package s3wrapper
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -56,6 +57,11 @@ func New(svc *s3.S3) *S3Wrapper {
 		svc:                  svc,
 		concurrencySemaphore: ch,
 	}
+}
+
+func (w *S3Wrapper) WithMaxConcurrency(maxConcurrency int) *S3Wrapper {
+	w.concurrencySemaphore = make(chan struct{}, maxConcurrency)
+	return w
 }
 
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
@@ -152,9 +158,9 @@ func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) 
 		return nil, err
 	}
 	return resp.Body, nil
-
 }
-func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan string {
+
+func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool) chan string {
 	lines := make(chan string, 10000)
 	var wg sync.WaitGroup
 	go func() {
@@ -166,27 +172,50 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 				defer func() { <-w.concurrencySemaphore }()
 
 				reader, err := w.GetReader(*key.Bucket, *key.Key)
+				defer reader.Close()
 				if err != nil {
 					panic(err)
 				}
-				ext_reader, err := util.GetReaderByExt(reader, *key.Key)
-				if err != nil {
-					panic(err)
-				}
-
-				for {
-					line, _, err := ext_reader.ReadLine()
+				if !raw {
+					extReader, err := util.GetReaderByExt(reader, *key.Key)
 					if err != nil {
-						if err.Error() == "EOF" {
-							break
-						} else {
+						panic(err)
+					}
+					bufExtReader := bufio.NewReader(extReader)
+
+					for {
+						line, _, err := bufExtReader.ReadLine()
+
+						if err != nil && err.Error() != "EOF" {
 							log.Fatalln(err)
 						}
+
+						if includeKeyName {
+							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+						} else {
+							lines <- fmt.Sprintf("%s", string(line))
+						}
+						if err != nil {
+							break
+						}
 					}
-					if includeKeyName {
-						lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
-					} else {
-						lines <- fmt.Sprintf("%s", string(line))
+				} else {
+					buf := make([]byte, 64)
+					for {
+						numBytes, err := reader.Read(buf)
+						if err != nil && err.Error() != "EOF" {
+							log.Fatalln(err)
+						}
+
+						if includeKeyName {
+							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(buf[0:numBytes]))
+						} else {
+							lines <- fmt.Sprintf("%s", string(buf[0:numBytes]))
+						}
+
+						if err != nil {
+							break
+						}
 					}
 				}
 			}(key)
