@@ -181,10 +181,10 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 				defer func() { <-w.concurrencySemaphore }()
 
 				reader, err := w.GetReader(*key.Bucket, *key.Key)
-				defer reader.Close()
 				if err != nil {
 					panic(err)
 				}
+				defer reader.Close()
 				if !raw {
 					extReader, err := util.GetReaderByExt(reader, *key.Key)
 					if err != nil {
@@ -202,7 +202,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 						if includeKeyName {
 							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
 						} else {
-							lines <- fmt.Sprintf("%s", string(line))
+							lines <- string(line)
 						}
 						if err != nil {
 							break
@@ -219,7 +219,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 						if includeKeyName {
 							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(buf[0:numBytes]))
 						} else {
-							lines <- fmt.Sprintf("%s", string(buf[0:numBytes]))
+							lines <- string(buf[0:numBytes])
 						}
 
 						if err != nil {
