@@ -3,14 +3,14 @@
 
 Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal for buckets containing millions of keys.
 
-#Installation
+# Installation
 
 ```bash
 go get -u github.com/TuneOSS/fasts3
 ```
 This should install the binary under `$GOPATH/bin/`
 
-#Configuration
+# Configuration
 
 Use `aws configure` command from the aws cli tool (https://aws.amazon.com/cli/) which will create the necessary config files in `~/.aws/credentials`.
 
@@ -29,14 +29,14 @@ export AWS_SECRET_ACCESS_KEY=<secret_key>
 export AWS_REGION=us-east-1
 ```
 
-#Usage
+# Usage
 Use:
 ```
 fasts3 --help
 fasts3 <cmd> --help
 ```
 
-###Using search depth to *go* faster
+### Using search depth to *go* faster
 Many times you know the structure of your s3 bucket, and this can be used to optimize listings. Say you have a structure like so:
 ```bash
 fasts3 ls s3://mybuck/logs/
@@ -50,10 +50,10 @@ DIR s3://mybuck/logs/2015/
 
 Doing a `fasts3 ls -r s3://mybuck/logs/` will read all keys under `logs` sequentially. We can make this faster by adding a `--search-depth 1` flag to the command which gives each of the underlying directories its own thread, increasing throughput.
 
-###Concurrency
+### Concurrency
 The concurrency level of s3 command execution can be tweaked based on your usage needs. By default, `4*NumCPU` s3 commands will be executed concurrently, which is ideal based on our benchmarks. If you want to override this value, set `GOMAXPROCS` in your environment to set the concurrency level: `GOMAXPROCS=64 fasts3 ls -r s3://mybuck/logs/` will execute 64 s3 commands concurrently.
 
-###Examples
+### Examples
 ```bash
 # ls
 fasts3 ls s3://mybucket/ # lists top level directories and keys
@@ -73,7 +73,7 @@ fasts3 cp -r s3://mybuck/logs/ s3://otherbuck/ # copies all subdirectories to an
 fasts3 cp -r -f s3://mybuck/logs/ s3://otherbuck/all-logs/ # copies all source files into the same destination directory
 ```
 
-###Completion
+### Completion
 Bash and ZSH completion are available.
 
 To install for bash:
