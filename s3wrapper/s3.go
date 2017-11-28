@@ -1,9 +1,11 @@
 package s3wrapper
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -58,6 +60,11 @@ func New(svc *s3.S3) *S3Wrapper {
 	}
 }
 
+func (w *S3Wrapper) WithMaxConcurrency(maxConcurrency int) *S3Wrapper {
+	w.concurrencySemaphore = make(chan struct{}, maxConcurrency)
+	return w
+}
+
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
 	ch := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
@@ -106,10 +113,14 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 		err := w.svc.ListObjectsV2Pages(params, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, prefix := range page.CommonPrefixes {
 				if *prefix.Prefix != delimiter {
-					formattedKey := FormatS3Uri(bucket, *prefix.Prefix)
+					escapedPrefix, err := url.QueryUnescape(*prefix.Prefix)
+					if err != nil {
+						escapedPrefix = *prefix.Prefix
+					}
+					formattedKey := FormatS3Uri(bucket, escapedPrefix)
 					ch <- &ListOutput{
 						IsPrefix:     true,
-						Key:          prefix.Prefix,
+						Key:          &escapedPrefix,
 						FullKey:      &formattedKey,
 						LastModified: nil,
 						Size:         nil,
@@ -119,13 +130,17 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 			}
 
 			for _, key := range page.Contents {
-				formattedKey := FormatS3Uri(bucket, *key.Key)
+				escapedKey, err := url.QueryUnescape(*key.Key)
+				if err != nil {
+					escapedKey = *key.Key
+				}
+				formattedKey := FormatS3Uri(bucket, escapedKey)
 				if keyRegexFilter != nil && !keyRegexFilter.MatchString(formattedKey) {
 					continue
 				}
 				ch <- &ListOutput{
 					IsPrefix:     false,
-					Key:          key.Key,
+					Key:          &escapedKey,
 					FullKey:      &formattedKey,
 					LastModified: key.LastModified,
 					Size:         key.Size,
@@ -152,9 +167,9 @@ func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) 
 		return nil, err
 	}
 	return resp.Body, nil
-
 }
-func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan string {
+
+func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool) chan string {
 	lines := make(chan string, 10000)
 	var wg sync.WaitGroup
 	go func() {
@@ -169,24 +184,47 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool) chan stri
 				if err != nil {
 					panic(err)
 				}
-				ext_reader, err := util.GetReaderByExt(reader, *key.Key)
-				if err != nil {
-					panic(err)
-				}
-
-				for {
-					line, _, err := ext_reader.ReadLine()
+				defer reader.Close()
+				if !raw {
+					extReader, err := util.GetReaderByExt(reader, *key.Key)
 					if err != nil {
-						if err.Error() == "EOF" {
-							break
-						} else {
+						panic(err)
+					}
+					bufExtReader := bufio.NewReader(extReader)
+
+					for {
+						line, err := bufExtReader.ReadBytes('\n')
+
+						if err != nil && err.Error() != "EOF" {
 							log.Fatalln(err)
 						}
+
+						if includeKeyName {
+							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+						} else {
+							lines <- string(line)
+						}
+						if err != nil {
+							break
+						}
 					}
-					if includeKeyName {
-						lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
-					} else {
-						lines <- fmt.Sprintf("%s", string(line))
+				} else {
+					buf := make([]byte, 64)
+					for {
+						numBytes, err := reader.Read(buf)
+						if err != nil && err.Error() != "EOF" {
+							log.Fatalln(err)
+						}
+
+						if includeKeyName {
+							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(buf[0:numBytes]))
+						} else {
+							lines <- string(buf[0:numBytes])
+						}
+
+						if err != nil {
+							break
+						}
 					}
 				}
 			}(key)

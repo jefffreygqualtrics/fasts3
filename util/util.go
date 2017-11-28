@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bufio"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -53,16 +52,16 @@ func GetNumFileDescriptors() (uint64, error) {
 }
 
 // getReaderByExt is a factory for reader based on the extension of the key
-func GetReaderByExt(reader io.ReadCloser, key string) (*bufio.Reader, error) {
+func GetReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
 	ext := path.Ext(key)
 	if ext == ".gz" || ext == ".gzip" {
 		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
-			return bufio.NewReader(reader), nil
+			return reader, nil
 		}
-		return bufio.NewReader(gzReader), nil
+		return gzReader, nil
 	} else {
-		return bufio.NewReader(reader), nil
+		return reader, nil
 	}
 }
 
