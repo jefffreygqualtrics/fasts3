@@ -6,12 +6,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/tuneinc/fasts3/s3wrapper"
-	"github.com/tuneinc/fasts3/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	humanize "github.com/dustin/go-humanize"
+	"github.com/tuneinc/fasts3/s3wrapper"
+	"github.com/tuneinc/fasts3/util"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -223,7 +223,7 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.3.2")
+	app.Version("1.3.3")
 	aws_session, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
