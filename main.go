@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/TuneOSS/fasts3/s3wrapper"
-	"github.com/TuneOSS/fasts3/util"
+	"github.com/tuneinc/fasts3/s3wrapper"
+	"github.com/tuneinc/fasts3/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
