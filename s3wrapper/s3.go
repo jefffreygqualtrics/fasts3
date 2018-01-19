@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tuneinc/fasts3/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/tuneinc/fasts3/util"
 )
 
 type ListOutput struct {
