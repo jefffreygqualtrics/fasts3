@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/tuneinc/fasts3.svg?branch=master)](https://travis-ci.org/tuneinc/fasts3) [![Go Report Card](https://goreportcard.com/badge/github.com/tuneinc/fasts3)](https://goreportcard.com/report/github.com/tuneinc/fasts3)
+[![Build Status](https://travis-ci.org/tuneinc/fasts3.svg?branch=master)](https://travis-ci.org/tuneinc/fasts3) [![Go Report Card](https://goreportcard.com/badge/github.com/tuneinc/fasts3)](https://goreportcard.com/report/github.com/tuneinc/fasts3)  
 ![FastS3](http://i.imgur.com/A42azaA.png)
 ---
 
