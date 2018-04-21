@@ -4,6 +4,8 @@
 
 Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal for buckets containing millions of keys.
 
+![autocomplete demo for zsh](autocomplete_demo.gif)
+
 # Installation
 
 ```bash
@@ -86,7 +88,3 @@ For zsh:
 ```
 source completion.zsh
 ```
-
-Demo:
-
-![autocomplete demo for zsh](autocomplete_demo.gif)
