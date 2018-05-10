@@ -19,6 +19,10 @@ import (
 	"github.com/tuneinc/fasts3/util"
 )
 
+// ListOutput represents the pruned and
+// normalized result of a list call to S3,
+// this is meant to cut down on memory and
+// overhead being used in the channels
 type ListOutput struct {
 	IsPrefix     bool
 	Size         *int64
@@ -28,6 +32,9 @@ type ListOutput struct {
 	FullKey      *string
 }
 
+// S3Wrapper is a wrapper for the S3
+// library which aims to make some of
+// it's functions faster
 type S3Wrapper struct {
 	concurrencySemaphore chan struct{}
 	svc                  *s3.S3
@@ -41,10 +48,13 @@ func parseS3Uri(s3Uri string) (bucket string, prefix string) {
 	return bucket, prefix
 }
 
+// FormatS3Uri takes a bucket and a prefix and turns it into
+// a S3 URI
 func FormatS3Uri(bucket string, key string) string {
 	return fmt.Sprintf("s3://%s", path.Join(bucket, key))
 }
 
+// New creates a new S3Wrapper
 func New(svc *s3.S3) *S3Wrapper {
 	// set concurrency limit to GOMAXPROCS if set, else default to 4x CPUs
 	var ch chan struct{}
@@ -60,11 +70,13 @@ func New(svc *s3.S3) *S3Wrapper {
 	}
 }
 
+// WithMaxConcurrency sets the maximum concurrency for the S3 operations
 func (w *S3Wrapper) WithMaxConcurrency(maxConcurrency int) *S3Wrapper {
 	w.concurrencySemaphore = make(chan struct{}, maxConcurrency)
 	return w
 }
 
+// ListAll is a convienience function for listing and collating all the results for multiple S3 URIs
 func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
 	ch := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
@@ -85,12 +97,13 @@ func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, k
 	return ch
 }
 
+// List is a wrapping function to parallelize listings and normalize the results from the API
 func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
 	bucket, prefix := parseS3Uri(s3Uri)
 	if recursive {
 		delimiter = ""
 	}
-	var keyRegexFilter *regexp.Regexp = nil
+	var keyRegexFilter *regexp.Regexp
 	if keyRegex != nil {
 		keyRegexFilter = regexp.MustCompile(*keyRegex)
 	}
@@ -157,6 +170,7 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 	return ch
 }
 
+// GetReader retrieves an appropriate reader for the given bucket and key
 func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) {
 	params := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
@@ -169,6 +183,7 @@ func (w *S3Wrapper) GetReader(bucket string, key string) (io.ReadCloser, error) 
 	return resp.Body, nil
 }
 
+// Stream provides a channel with data from the keys
 func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool) chan string {
 	lines := make(chan string, 10000)
 	var wg sync.WaitGroup
@@ -238,6 +253,8 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 	return lines
 }
 
+// GetAll retrieves all keys to the local filesystem, it repurposes ListOutput as it's
+// output which contains the local paths to the keys
 func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListOutput {
 	listOut := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
@@ -282,6 +299,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListO
 	return listOut
 }
 
+// CopyAll copies keys to the dest, source defines what the base prefix is
 func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimiter string, recurse, flat bool) chan *ListOutput {
 	_, sourcePrefix := parseS3Uri(source)
 	destBucket, destPrefix := parseS3Uri(dest)
@@ -296,8 +314,8 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 			defer func() { <-w.concurrencySemaphore }()
 
 			if !k.IsPrefix {
-				kBucket, kPrefix := parseS3Uri(*k.FullKey)
-				sourcePath := "/" + path.Join(kBucket, kPrefix)
+				keyBucket, keyPrefix := parseS3Uri(*k.FullKey)
+				sourcePath := "/" + path.Join(keyBucket, keyPrefix)
 
 				// trim common path prefixes from k.Key and sourcePrefix
 				trimDest := strings.Split(*k.Key, delimiter)

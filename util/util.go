@@ -7,9 +7,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"syscall"
-
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type s3List []string
@@ -21,11 +18,10 @@ func (s *s3List) Set(value string) error {
 		return err
 	}
 	if !hasMatch {
-		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb\n", value)
-	} else {
-		*s = append(*s, value)
-		return nil
+		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb", value)
 	}
+	*s = append(*s, value)
+	return nil
 }
 
 func (s *s3List) String() string {
@@ -44,14 +40,7 @@ func S3List(s kingpin.Settings) *[]string {
 	return target
 }
 
-func GetNumFileDescriptors() (uint64, error) {
-	var rLimit syscall.Rlimit
-
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-	return rLimit.Cur, err
-}
-
-// getReaderByExt is a factory for reader based on the extension of the key
+// GetReaderByExt is a factory for reader based on the extension of the key
 func GetReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
 	ext := path.Ext(key)
 	if ext == ".gz" || ext == ".gzip" {
@@ -60,19 +49,16 @@ func GetReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
 			return reader, nil
 		}
 		return gzReader, nil
-	} 
+	}
 
 	return reader, nil
 }
 
-// createPathIfNotExists takes a path and creates
+// CreatePathIfNotExists takes a path and creates
 // it if it doesn't exist
 func CreatePathIfNotExists(path string) error {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return nil
 	}
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
-	}
-	return nil
+	return os.MkdirAll(path, 0755)
 }
