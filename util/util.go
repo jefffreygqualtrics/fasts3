@@ -68,14 +68,11 @@ func GetReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
 // createPathIfNotExists takes a path and creates
 // it if it doesn't exist
 func CreatePathIfNotExists(path string) error {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		err := os.MkdirAll(path, 0755)
-		if err != nil {
-			return err
-		}
-	} else {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return nil
+	}
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
 	}
 	return nil
 }
