@@ -60,9 +60,9 @@ func GetReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
 			return reader, nil
 		}
 		return gzReader, nil
-	} else {
-		return reader, nil
-	}
+	} 
+
+	return reader, nil
 }
 
 // createPathIfNotExists takes a path and creates
