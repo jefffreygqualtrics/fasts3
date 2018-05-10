@@ -5,13 +5,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	humanize "github.com/dustin/go-humanize"
 	"github.com/tuneinc/fasts3/s3wrapper"
-	"github.com/tuneinc/fasts3/util"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -19,7 +19,7 @@ var (
 	app = kingpin.New("fasts3", "A faster s3 utility")
 
 	ls              = app.Command("ls", "List S3 prefixes.")
-	lsS3Uris        = util.S3List(ls.Arg("s3Uris", "list of S3 URIs").Required())
+	lsS3Uris        = newS3List(ls.Arg("s3Uris", "list of S3 URIs").Required())
 	lsRecurse       = ls.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	lsWithDate      = ls.Flag("with-date", "Include the last modified date.").Short('d').Bool()
 	lsDelimiter     = ls.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
@@ -28,7 +28,7 @@ var (
 	lsKeyRegex      = ls.Flag("key-regex", "Regex filter for keys.").Default("").String()
 
 	stream               = app.Command("stream", "Stream S3 files to stdout")
-	streamS3Uris         = util.S3List(stream.Arg("s3Uris", "list of S3 URIs").Required())
+	streamS3Uris         = newS3List(stream.Arg("s3Uris", "list of S3 URIs").Required())
 	streamKeyRegex       = stream.Flag("key-regex", "Regex filter for keys").Default("").String()
 	streamDelimiter      = stream.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	streamIncludeKeyName = stream.Flag("include-key-name", "Regex filter for keys.").Bool()
@@ -37,7 +37,7 @@ var (
 	streamRaw            = stream.Flag("raw", "Raw file output, output will not be line delimited or uncompressed").Bool()
 
 	get             = app.Command("get", "Fetch files from S3")
-	getS3Uris       = util.S3List(get.Arg("s3Uris", "list of S3 URIs").Required())
+	getS3Uris       = newS3List(get.Arg("s3Uris", "list of S3 URIs").Required())
 	getRecurse      = get.Flag("recursive", "Get all keys for this prefix.").Short('r').Bool()
 	getDelimiter    = get.Flag("delimiter", "Delimiter to use while listing.").Default("/").String()
 	getSearchDepth  = get.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
@@ -45,7 +45,7 @@ var (
 	getSkipExisting = get.Flag("skip-existing", "Skips downloading keys which already exist on the local file system").Bool()
 
 	cp            = app.Command("cp", "Copy files within S3")
-	cpS3Uris      = util.S3List(cp.Arg("s3Uris", "list of S3 URIs").Required())
+	cpS3Uris      = newS3List(cp.Arg("s3Uris", "list of S3 URIs").Required())
 	cpRecurse     = cp.Flag("recursive", "Copy all keys for this prefix.").Short('r').Bool()
 	cpFlat        = cp.Flag("flat", "Copy all source files into a flat destination folder (vs. corresponding subfolders)").Short('f').Bool()
 	cpDelimiter   = cp.Flag("delimiter", "Delimiter to use while copying.").Default("/").String()
@@ -53,7 +53,7 @@ var (
 	cpKeyRegex    = cp.Flag("key-regex", "Regex filter for keys.").Default("").String()
 
 	rm            = app.Command("rm", "Delete files within S3.")
-	rmS3Uris      = util.S3List(rm.Arg("s3Uris", "list of S3 URIs").Required())
+	rmS3Uris      = newS3List(rm.Arg("s3Uris", "list of S3 URIs").Required())
 	rmRecurse     = rm.Flag("recursive", "Delete all keys for this prefix.").Short('r').Bool()
 	rmDelimiter   = rm.Flag("delimiter", "Delimiter to use while deleting.").Default("/").String()
 	rmSearchDepth = rm.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
@@ -259,4 +259,43 @@ func main() {
 			panic(err)
 		}
 	}
+}
+
+type s3List []string
+
+// newS3List creates a new s3List kingpin setting
+func newS3List(s kingpin.Settings) *s3List {
+	target := new(s3List)
+	s.SetValue(target)
+	return target
+}
+
+// Set overrides kingping's Set method to validate value for s3 URIs
+func (s *s3List) Set(value string) error {
+	hasMatch, err := regexp.MatchString("^s3://", value)
+	if err != nil {
+		return err
+	}
+	if !hasMatch {
+		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb\n", value)
+	} else {
+		*s = append(*s, value)
+		return nil
+	}
+}
+
+func (s *s3List) String() string {
+	return ""
+}
+
+// IsCumulative specifies S3List as a cumulative argument
+func (s *s3List) IsCumulative() bool {
+	return true
+}
+
+func GetNumFileDescriptors() (uint64, error) {
+	var rLimit syscall.Rlimit
+
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	return rLimit.Cur, err
 }
