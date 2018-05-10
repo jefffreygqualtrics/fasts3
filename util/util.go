@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"regexp"
+
+	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
 
 type s3List []string
