@@ -38,10 +38,10 @@ func (s *s3List) IsCumulative() bool {
 }
 
 // S3List creates a new S3List kingpin setting
-func S3List(s kingpin.Settings) (target *[]string) {
-	target = new([]string)
+func S3List(s kingpin.Settings) *[]string {
+	target := new([]string)
 	s.SetValue((*s3List)(target))
-	return
+	return target
 }
 
 func GetNumFileDescriptors() (uint64, error) {
