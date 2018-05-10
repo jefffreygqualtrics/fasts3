@@ -5,7 +5,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -60,6 +59,9 @@ var (
 	rmKeyRegex    = rm.Flag("key-regex", "Regex filter for keys.").Default("").String()
 )
 
+// Ls lists S3 keys and prefixes using svc, s3Uris specifies which S3 prefixes/keys to list, recursive tells whether or not to list everything
+// under s3Uris, delimiter tells which character to use as the delimiter for listing prefixes, searchDepth determines how many prefixes to list
+// before parallelizing list calls, keyRegex is a regex filter on Keys
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
 	wrap := s3wrapper.New(svc)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
@@ -133,7 +135,7 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 	return outChan, nil
 }
 
-func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDates bool) {
+func printLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDates bool) {
 	for listOutput := range listChan {
 		if listOutput.IsPrefix {
 			fmt.Printf("%10s %s\n", "DIR", *listOutput.FullKey)
@@ -153,6 +155,11 @@ func PrintLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDat
 	}
 }
 
+// Stream streams S3 Key content to stdout using the svc, s3Uris specifies the S3 Prefixes/Keys to stream, delimiter tells the delimiter to use
+// when listing, searchDepth determines how many prefixes to list before parallelizing list calls, includeKeyName will prefix each line with the
+// key in which the line came from, keyRegex is a regex filter on Keys, ordered determines whether the lines can be inter-mingled with lines from
+// other files or must be in order (helpful for parsing binary files), raw is a boolean for determining whether to output the raw data of each
+// file instead of lines
 func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, includeKeyName bool, keyRegex *string, ordered bool, raw bool) error {
 	listCh, err := Ls(svc, s3Uris, true, delimiter, searchDepth, keyRegex)
 	if err != nil {
@@ -171,6 +178,10 @@ func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, incl
 	return nil
 }
 
+// Get downloads a file to the local filesystem using svc, s3Uris specifies the S3 Prefixes/Keys to download, recurse tells whether or not
+// to download everything under s3Uris, delimiter tells the delimiter to use when listing,
+// searchDepth determines how many prefixes to list before parallelizing list calls, keyRegex is a
+// regex filter on Keys, skipExisting skips files which already exist on the filesystem.
 func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string, skipExisting bool) error {
 	listCh, err := Ls(svc, s3Uris, recurse, delimiter, searchDepth, keyRegex)
 	if err != nil {
@@ -187,6 +198,10 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 	return nil
 }
 
+// Cp copies files from one s3 location to another using svc, s3Uris is a list of source and dest s3 URIs, recurse tells
+// whether to list all keys under the source prefix,  delimiter tells the delimiter to use when listing, searchDepth determines
+// the number of prefixes to list before parallelizing list calls, keyRegex is a regex filter on keys, when flat is
+// true it only takes the last part of the prefix as the filename.
 func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string, flat bool) error {
 	if len(s3Uris) != 2 {
 		fmt.Println("fasts3: error: must include one source and one destination URI")
@@ -208,6 +223,9 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 	return nil
 }
 
+// Rm removes files from S3 using svc, s3Uris is a list of prefixes/keys to delete, recurse tells whether or not to delete
+// everything under the prefixes, delimiter tells the delimiter to use when listing, searchDepth determines the number of
+// prefixes to list before parallelizing list calls, keyRegex is a regex filter on keys
 func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex *string) error {
 	listCh, err := Ls(svc, s3Uris, recurse, delimiter, searchDepth, keyRegex)
 	if err != nil {
@@ -223,8 +241,8 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.3.3")
-	aws_session, err := session.NewSessionWithOptions(session.Options{
+	app.Version("1.3.4")
+	awsSession, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
 
@@ -232,7 +250,7 @@ func main() {
 		panic(err)
 	}
 
-	svc := s3.New(aws_session, aws.NewConfig())
+	svc := s3.New(awsSession, aws.NewConfig())
 
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	// Register user
@@ -241,7 +259,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		PrintLs(listCh, *lsHumanReadable, *lsWithDate)
+		printLs(listCh, *lsHumanReadable, *lsWithDate)
 
 	case stream.FullCommand():
 		err := Stream(svc, *streamS3Uris, *streamDelimiter, *streamSearchDepth, *streamIncludeKeyName, streamKeyRegex, *streamOrdered, *streamRaw)
@@ -277,11 +295,10 @@ func (s *s3List) Set(value string) error {
 		return err
 	}
 	if !hasMatch {
-		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb\n", value)
-	} else {
-		*s = append(*s, value)
-		return nil
+		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb", value)
 	}
+	*s = append(*s, value)
+	return nil
 }
 
 func (s *s3List) String() string {
@@ -291,11 +308,4 @@ func (s *s3List) String() string {
 // IsCumulative specifies S3List as a cumulative argument
 func (s *s3List) IsCumulative() bool {
 	return true
-}
-
-func GetNumFileDescriptors() (uint64, error) {
-	var rLimit syscall.Rlimit
-
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-	return rLimit.Cur, err
 }
