@@ -5,7 +5,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -296,11 +295,10 @@ func (s *s3List) Set(value string) error {
 		return err
 	}
 	if !hasMatch {
-		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb\n", value)
-	} else {
-		*s = append(*s, value)
-		return nil
+		return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb", value)
 	}
+	*s = append(*s, value)
+	return nil
 }
 
 func (s *s3List) String() string {
@@ -310,11 +308,4 @@ func (s *s3List) String() string {
 // IsCumulative specifies S3List as a cumulative argument
 func (s *s3List) IsCumulative() bool {
 	return true
-}
-
-func GetNumFileDescriptors() (uint64, error) {
-	var rLimit syscall.Rlimit
-
-	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
-	return rLimit.Cur, err
 }

@@ -474,8 +474,5 @@ func createPathIfNotExists(path string) error {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return nil
 	}
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
-	}
-	return nil
+	return os.MkdirAll(path, 0755)
 }
