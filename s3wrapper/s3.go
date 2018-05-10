@@ -2,6 +2,7 @@ package s3wrapper
 
 import (
 	"bufio"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/tuneinc/fasts3/util"
 )
 
 type ListOutput struct {
@@ -186,7 +186,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 				}
 				defer reader.Close()
 				if !raw {
-					extReader, err := util.GetReaderByExt(reader, *key.Key)
+					extReader, err := getReaderByExt(reader, *key.Key)
 					if err != nil {
 						panic(err)
 					}
@@ -253,7 +253,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListO
 					// TODO: this assumes '/' as a delimiter
 					parts := strings.Split(*k.Key, "/")
 					dir := strings.Join(parts[0:len(parts)-1], "/")
-					util.CreatePathIfNotExists(dir)
+					createPathIfNotExists(dir)
 					reader, err := w.GetReader(*k.Bucket, *k.Key)
 					if err != nil {
 						panic(err)
@@ -434,4 +434,30 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 	}()
 
 	return listOut
+}
+
+// getReaderByExt is a factory for reader based on the extension of the key
+func getReaderByExt(reader io.ReadCloser, key string) (io.ReadCloser, error) {
+	ext := path.Ext(key)
+	if ext == ".gz" || ext == ".gzip" {
+		gzReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return reader, nil
+		}
+		return gzReader, nil
+	}
+
+	return reader, nil
+}
+
+// createPathIfNotExists takes a path and creates
+// it if it doesn't exist
+func createPathIfNotExists(path string) error {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return nil
+	}
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+	return nil
 }
