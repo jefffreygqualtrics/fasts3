@@ -1,9 +1,28 @@
 language: go
 
 go:
-  - 1.8.x
   - 1.9.x
+  - 1.10.x
   - master
 
-script:
-  - go build ./...
+stages:
+  - test
+  - name: deploy
+    if: tag IS present
+
+jobs:
+  include:
+    - stage: test
+      script: go build ./...
+    - stage: deploy
+      go: 1.10.x
+      script: curl -sL https://git.io/goreleaser | bash
+
+matrix:
+  allow_failures:
+    - go: master
+  fast_finish: true
+
+env:
+  global:
+    secure: "Iby/cnnH2C7SmMJoLBT1khL/jfiNxpoZ2axHyEHSeiaoixS75vkKtyHrrcs8A+71fKgMLOq4w5VGbNfHtrUWt6Ny4IFWiNk6RYPnFu72Bzm6bKFb5xS0yGPQ0Yo1GHGlNwHeBi9gI+MUQ4EDoKj4CGvVL60ELcZIaJjnNvXWRGU="
