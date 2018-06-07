@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	app = kingpin.New("fasts3", "A faster s3 utility")
+	app         = kingpin.New("fasts3", "A faster s3 utility")
+	maxParallel = app.Flag("parallel", "Maximum number of calls to make to S3 simultaneously").Short('p').Default("10").Int()
 
 	ls              = app.Command("ls", "List S3 prefixes.")
 	lsS3Uris        = newS3List(ls.Arg("s3Uris", "list of S3 URIs").Required())
@@ -63,7 +64,7 @@ var (
 // under s3Uris, delimiter tells which character to use as the delimiter for listing prefixes, searchDepth determines how many prefixes to list
 // before parallelizing list calls, keyRegex is a regex filter on Keys
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex *string) (chan *s3wrapper.ListOutput, error) {
-	wrap := s3wrapper.New(svc)
+	wrap := s3wrapper.New(svc, *maxParallel)
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
 
 	slashRegex := regexp.MustCompile("/")
@@ -165,7 +166,7 @@ func Stream(svc *s3.S3, s3Uris []string, delimiter string, searchDepth int, incl
 	if err != nil {
 		return err
 	}
-	wrap := s3wrapper.New(svc)
+	wrap := s3wrapper.New(svc, *maxParallel)
 	if ordered {
 		wrap.WithMaxConcurrency(1)
 	}
@@ -188,7 +189,7 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 		return err
 	}
 
-	wrap := s3wrapper.New(svc)
+	wrap := s3wrapper.New(svc, *maxParallel)
 
 	downloadedFiles := wrap.GetAll(listCh, skipExisting)
 	for file := range downloadedFiles {
@@ -213,7 +214,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 		return err
 	}
 
-	wrap := s3wrapper.New(svc)
+	wrap := s3wrapper.New(svc, *maxParallel)
 
 	copiedFiles := wrap.CopyAll(listCh, s3Uris[0], s3Uris[1], delimiter, recurse, flat)
 	for file := range copiedFiles {
@@ -232,7 +233,7 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 		return err
 	}
 
-	wrap := s3wrapper.New(svc)
+	wrap := s3wrapper.New(svc, *maxParallel)
 	deleted := wrap.DeleteObjects(listCh)
 	for key := range deleted {
 		fmt.Printf("Deleted %s\n", *key.FullKey)

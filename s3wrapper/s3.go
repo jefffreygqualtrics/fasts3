@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -55,18 +54,10 @@ func FormatS3Uri(bucket string, key string) string {
 }
 
 // New creates a new S3Wrapper
-func New(svc *s3.S3) *S3Wrapper {
-	// set concurrency limit to GOMAXPROCS if set, else default to 4x CPUs
-	var ch chan struct{}
-	if os.Getenv("GOMAXPROCS") != "" {
-		ch = make(chan struct{}, runtime.GOMAXPROCS(0))
-	} else {
-		ch = make(chan struct{}, 4*runtime.NumCPU())
-	}
-
+func New(svc *s3.S3, maxParallel int) *S3Wrapper {
 	return &S3Wrapper{
 		svc:                  svc,
-		concurrencySemaphore: ch,
+		concurrencySemaphore: make(chan struct{}, maxParallel),
 	}
 }
 
