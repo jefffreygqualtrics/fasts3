@@ -24,11 +24,11 @@ import (
 // overhead being used in the channels
 type ListOutput struct {
 	IsPrefix     bool
-	Size         *int64
-	Key          *string
-	LastModified *time.Time
-	Bucket       *string
-	FullKey      *string
+	Size         int64
+	Key          string
+	LastModified time.Time
+	Bucket       string
+	FullKey      string
 }
 
 // S3Wrapper is a wrapper for the S3
@@ -124,11 +124,11 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 					formattedKey := FormatS3Uri(bucket, escapedPrefix)
 					ch <- &ListOutput{
 						IsPrefix:     true,
-						Key:          &escapedPrefix,
-						FullKey:      &formattedKey,
-						LastModified: nil,
-						Size:         nil,
-						Bucket:       &bucket,
+						Key:          escapedPrefix,
+						FullKey:      formattedKey,
+						LastModified: time.Time{},
+						Size:         0,
+						Bucket:       bucket,
 					}
 				}
 			}
@@ -144,11 +144,11 @@ func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRege
 				}
 				ch <- &ListOutput{
 					IsPrefix:     false,
-					Key:          &escapedKey,
-					FullKey:      &formattedKey,
-					LastModified: key.LastModified,
-					Size:         key.Size,
-					Bucket:       &bucket,
+					Key:          escapedKey,
+					FullKey:      formattedKey,
+					LastModified: *key.LastModified,
+					Size:         *key.Size,
+					Bucket:       bucket,
 				}
 			}
 			return true
@@ -186,13 +186,13 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 				w.concurrencySemaphore <- struct{}{}
 				defer func() { <-w.concurrencySemaphore }()
 
-				reader, err := w.GetReader(*key.Bucket, *key.Key)
+				reader, err := w.GetReader(key.Bucket, key.Key)
 				if err != nil {
 					panic(err)
 				}
 				defer reader.Close()
 				if !raw {
-					extReader, err := getReaderByExt(reader, *key.Key)
+					extReader, err := getReaderByExt(reader, key.Key)
 					if err != nil {
 						panic(err)
 					}
@@ -206,7 +206,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 						}
 
 						if includeKeyName {
-							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(line))
+							lines <- fmt.Sprintf("[%s] %s", key.FullKey, string(line))
 						} else {
 							lines <- string(line)
 						}
@@ -223,7 +223,7 @@ func (w *S3Wrapper) Stream(keys chan *ListOutput, includeKeyName bool, raw bool)
 						}
 
 						if includeKeyName {
-							lines <- fmt.Sprintf("[%s] %s", *key.FullKey, string(buf[0:numBytes]))
+							lines <- fmt.Sprintf("[%s] %s", key.FullKey, string(buf[0:numBytes]))
 						} else {
 							lines <- string(buf[0:numBytes])
 						}
@@ -250,7 +250,7 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListO
 	listOut := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
 	for key := range keys {
-		if _, err := os.Stat(*key.Key); skipExisting == false || os.IsNotExist(err) {
+		if _, err := os.Stat(key.Key); skipExisting == false || os.IsNotExist(err) {
 			wg.Add(1)
 			go func(k *ListOutput) {
 				defer wg.Done()
@@ -259,15 +259,15 @@ func (w *S3Wrapper) GetAll(keys chan *ListOutput, skipExisting bool) chan *ListO
 
 				if !k.IsPrefix {
 					// TODO: this assumes '/' as a delimiter
-					parts := strings.Split(*k.Key, "/")
+					parts := strings.Split(k.Key, "/")
 					dir := strings.Join(parts[0:len(parts)-1], "/")
 					createPathIfNotExists(dir)
-					reader, err := w.GetReader(*k.Bucket, *k.Key)
+					reader, err := w.GetReader(k.Bucket, k.Key)
 					if err != nil {
 						panic(err)
 					}
 					defer reader.Close()
-					outFile, err := os.Create(*k.Key)
+					outFile, err := os.Create(k.Key)
 					if err != nil {
 						panic(err)
 					}
@@ -305,11 +305,11 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 			defer func() { <-w.concurrencySemaphore }()
 
 			if !k.IsPrefix {
-				keyBucket, keyPrefix := parseS3Uri(*k.FullKey)
+				keyBucket, keyPrefix := parseS3Uri(k.FullKey)
 				sourcePath := "/" + path.Join(keyBucket, keyPrefix)
 
 				// trim common path prefixes from k.Key and sourcePrefix
-				trimDest := strings.Split(*k.Key, delimiter)
+				trimDest := strings.Split(k.Key, delimiter)
 				if flat {
 					trimDest = trimDest[len(trimDest)-1:]
 				} else if recurse {
@@ -332,7 +332,7 @@ func (w *S3Wrapper) CopyAll(keys chan *ListOutput, source, dest string, delimite
 				if err != nil {
 					fmt.Println("error:", err)
 				} else {
-					k.Key = &fullDest
+					k.Key = fullDest
 					listOut <- k
 				}
 			}
@@ -392,12 +392,12 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 				}
 
 				if *params.Bucket == "" {
-					params.Bucket = aws.String(*item.Bucket)
+					params.Bucket = aws.String(item.Bucket)
 				}
 				// only maxKeysPerDeleteObjectsRequest objects can fit in
 				// one DeleteObjects request also if the bucket changes we cannot
 				// put it in the same request so we flush and start a new one
-				if len(objects) >= maxKeysPerDeleteObjectsRequest || *params.Bucket != *item.Bucket {
+				if len(objects) >= maxKeysPerDeleteObjectsRequest || *params.Bucket != item.Bucket {
 					// flush
 					params.Delete = &s3.Delete{
 						Objects: objects,
@@ -414,11 +414,11 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 
 					// reset
 					listOutCache = make([]*ListOutput, 0, maxKeysPerDeleteObjectsRequest)
-					params.Bucket = aws.String(*item.Bucket)
+					params.Bucket = aws.String(item.Bucket)
 					objects = make([]*s3.ObjectIdentifier, 0, maxKeysPerDeleteObjectsRequest)
 				}
 				objects = append(objects, &s3.ObjectIdentifier{
-					Key: item.Key,
+					Key: aws.String(item.Key),
 				})
 				listOutCache = append(listOutCache, item)
 			}

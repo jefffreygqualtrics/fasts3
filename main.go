@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -99,11 +100,11 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 					fullKey := s3wrapper.FormatS3Uri(bucket, "")
 					outChan <- &s3wrapper.ListOutput{
 						IsPrefix:     true,
-						Key:          &key,
-						FullKey:      &fullKey,
-						LastModified: nil,
-						Size:         nil,
-						Bucket:       &bucket,
+						Key:          key,
+						FullKey:      fullKey,
+						LastModified: time.Time{},
+						Size:         0,
+						Bucket:       bucket,
 					}
 				}
 			}
@@ -120,7 +121,7 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 			newS3Uris := make([]string, 0)
 			for itm := range wrap.ListAll(s3Uris, false, delimiter, keyRegex) {
 				if itm.IsPrefix {
-					newS3Uris = append(newS3Uris, strings.TrimRight(*itm.FullKey, delimiter)+delimiter)
+					newS3Uris = append(newS3Uris, strings.TrimRight(itm.FullKey, delimiter)+delimiter)
 				} else {
 					outChan <- itm
 				}
@@ -139,19 +140,19 @@ func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDep
 func printLs(listChan chan *s3wrapper.ListOutput, humanReadable bool, includeDates bool) {
 	for listOutput := range listChan {
 		if listOutput.IsPrefix {
-			fmt.Printf("%10s %s\n", "DIR", *listOutput.FullKey)
+			fmt.Printf("%10s %s\n", "DIR", listOutput.FullKey)
 		} else {
 			var size string
 			if humanReadable {
-				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(*listOutput.Size)))
+				size = fmt.Sprintf("%10s", humanize.Bytes(uint64(listOutput.Size)))
 			} else {
-				size = fmt.Sprintf("%10d", *listOutput.Size)
+				size = fmt.Sprintf("%10d", listOutput.Size)
 			}
 			date := ""
 			if includeDates {
-				date = " " + (*listOutput.LastModified).Format("2006-01-02T15:04:05")
+				date = " " + (listOutput.LastModified).Format("2006-01-02T15:04:05")
 			}
-			fmt.Printf("%s%s %s\n", size, date, *listOutput.FullKey)
+			fmt.Printf("%s%s %s\n", size, date, listOutput.FullKey)
 		}
 	}
 }
@@ -193,7 +194,7 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 
 	downloadedFiles := wrap.GetAll(listCh, skipExisting)
 	for file := range downloadedFiles {
-		fmt.Printf("Downloaded %s -> %s\n", *file.FullKey, *file.Key)
+		fmt.Printf("Downloaded %s -> %s\n", file.FullKey, file.Key)
 	}
 
 	return nil
@@ -218,7 +219,7 @@ func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 
 	copiedFiles := wrap.CopyAll(listCh, s3Uris[0], s3Uris[1], delimiter, recurse, flat)
 	for file := range copiedFiles {
-		fmt.Printf("Copied %s -> %s%s%s\n", *file.FullKey, strings.TrimRight(s3Uris[1], delimiter), delimiter, *file.Key)
+		fmt.Printf("Copied %s -> %s%s%s\n", file.FullKey, strings.TrimRight(s3Uris[1], delimiter), delimiter, file.Key)
 	}
 
 	return nil
@@ -236,7 +237,7 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 	wrap := s3wrapper.New(svc, *maxParallel)
 	deleted := wrap.DeleteObjects(listCh)
 	for key := range deleted {
-		fmt.Printf("Deleted %s\n", *key.FullKey)
+		fmt.Printf("Deleted %s\n", key.FullKey)
 	}
 	return nil
 }
