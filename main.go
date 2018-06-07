@@ -249,7 +249,8 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
+		return
 	}
 
 	svc := s3.New(awsSession, aws.NewConfig())
@@ -259,24 +260,28 @@ func main() {
 	case ls.FullCommand():
 		listCh, err := Ls(svc, *lsS3Uris, *lsRecurse, *lsDelimiter, *lsSearchDepth, lsKeyRegex)
 		if err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
+			return
 		}
 		printLs(listCh, *lsHumanReadable, *lsWithDate)
 
 	case stream.FullCommand():
 		err := Stream(svc, *streamS3Uris, *streamDelimiter, *streamSearchDepth, *streamIncludeKeyName, streamKeyRegex, *streamOrdered, *streamRaw)
 		if err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
+			return
 		}
 	case get.FullCommand():
 		Get(svc, *getS3Uris, *getRecurse, *getDelimiter, *getSearchDepth, getKeyRegex, *getSkipExisting)
 	case cp.FullCommand():
 		if err := Cp(svc, *cpS3Uris, *cpRecurse, *cpDelimiter, *cpSearchDepth, cpKeyRegex, *cpFlat); err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
+			return
 		}
 	case rm.FullCommand():
 		if err := Rm(svc, *rmS3Uris, *rmRecurse, *rmDelimiter, *rmSearchDepth, rmKeyRegex); err != nil {
-			panic(err)
+			fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
+			return
 		}
 	}
 }
