@@ -1,0 +1,45 @@
+project_name: fasts3
+release:
+  github:
+    owner: tuneinc
+    name: fasts3
+  name_template: '{{.Tag}}'
+brew:
+  description: "Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal for buckets containing millions of keys."
+  homepage: "https://github.com/tuneinc/fasts3"
+  github:
+    owner: tuneinc
+    name: homebrew-tap
+  commit_author:
+    name: goreleaserbot
+    email: goreleaser@carlosbecker.com
+  install: bin.install "fasts3"
+builds:
+- goos:
+  - linux
+  - darwin
+  goarch:
+  - amd64
+  - "386"
+  main: main.go
+  ldflags: -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+  binary: fasts3
+archive:
+  format: tar.gz
+  name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{
+    .Arm }}{{ end }}'
+snapshot:
+  name_template: SNAPSHOT-{{ .Commit }}
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+changelog:
+  filters:
+    # commit messages matching the regexp listed here will be removed from
+    # the changelog
+    # Default is empty
+    exclude:
+      - '^\(docs\)'
+      - '^\(travis\)'
+      - '^\(coverage\)'
+      - '^\(tests?'
+      - '^Merge pull request'

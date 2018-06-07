@@ -59,6 +59,8 @@ var (
 	rmDelimiter   = rm.Flag("delimiter", "Delimiter to use while deleting.").Default("/").String()
 	rmSearchDepth = rm.Flag("search-depth", "Dictates how many prefix groups to walk down.").Default("0").Int()
 	rmKeyRegex    = rm.Flag("key-regex", "Regex filter for keys.").Default("").String()
+
+	version = "master"
 )
 
 // Ls lists S3 keys and prefixes using svc, s3Uris specifies which S3 prefixes/keys to list, recursive tells whether or not to list everything
@@ -243,7 +245,7 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 }
 
 func main() {
-	app.Version("1.3.5")
+	app.Version(version)
 	awsSession, err := session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	})
