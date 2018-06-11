@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/tuneinc/fasts3.svg?branch=master)](https://travis-ci.org/tuneinc/fasts3) [![Go Report Card](https://goreportcard.com/badge/github.com/tuneinc/fasts3)](https://goreportcard.com/report/github.com/tuneinc/fasts3)  
+[![Build Status](https://travis-ci.org/tuneinc/fasts3.svg?branch=master)](https://travis-ci.org/tuneinc/fasts3) [![Go Report Card](https://goreportcard.com/badge/github.com/tuneinc/fasts3)](https://goreportcard.com/report/github.com/tuneinc/fasts3)
 ![FastS3](http://i.imgur.com/A42azaA.png)
 ---
 
@@ -8,6 +8,15 @@ Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal f
 
 # Installation
 
+## Mac
+```
+brew install tuneinc/tap/fasts3
+```
+## Binaries
+
+head over to the [Releases](https://github.com/tuneinc/fasts3/releases) page.
+
+## Via go get
 ```bash
 go get -u github.com/tuneinc/fasts3
 ```
