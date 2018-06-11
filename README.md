@@ -8,6 +8,12 @@ Fast s3 utility is a faster version of s3cmd's ls, get, and cp functions ideal f
 
 # Installation
 
+### Homebrew
+```bash
+brew install tuneinc/tap/fasts3
+```
+
+### Source
 ```bash
 go get -u github.com/tuneinc/fasts3
 ```
