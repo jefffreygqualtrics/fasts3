@@ -1,36 +1,60 @@
 package cmd
 
 import (
-	"fmt"
+	"log"
 
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/spf13/cobra"
+	"github.com/tuneinc/fasts3/s3wrapper"
 )
 
 // getCmd represents the get command
 var getCmd = &cobra.Command{
-	Use:   "get",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Use:   "get <S3 URIs>",
+	Short: "Download files from S3",
+	Long:  ``,
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("get called")
+		recursive, err := cmd.Flags().GetBool("recursive")
+		if err != nil {
+			log.Fatal(err)
+		}
+		skipExisting, err := cmd.Flags().GetBool("skip-existing")
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = Get(s3Client, args, recursive, delimiter, searchDepth, keyRegex, skipExisting)
+		if err != nil {
+			log.Fatal(err)
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	// Here you will define your flags and configuration settings.
+	lsCmd.Flags().BoolP("recursive", "r", false, "Get all keys for this prefix")
+	getCmd.Flags().BoolP("skip-existing", "x", false, "Skips downloading keys which already exist on the local file system")
+}
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// getCmd.PersistentFlags().String("foo", "", "A help for foo")
+// Get downloads a file to the local filesystem using svc, s3Uris specifies the
+// S3 Prefixes/Keys to download, recurse tells whether or not to download
+// everything under s3Uris, delimiter tells the delimiter to use when listing,
+// searchDepth determines how many prefixes to list before parallelizing list
+// calls, keyRegex is a regex filter on Keys, skipExisting skips files which
+// already exist on the filesystem.
+func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex string, skipExisting bool) error {
+	listCh, err := Ls(svc, s3Uris, recurse, delimiter, searchDepth, keyRegex)
+	if err != nil {
+		return err
+	}
 
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// getCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	wrap := s3wrapper.New(svc, maxParallel)
+
+	downloadedFiles := wrap.GetAll(listCh, skipExisting)
+	for file := range downloadedFiles {
+		log.Printf("Downloaded %s -> %s\n", file.FullKey, file.Key)
+	}
+
+	return nil
 }
