@@ -19,7 +19,7 @@ var lsCmd = &cobra.Command{
 	Use:   "ls <S3 URIs>",
 	Short: "List S3 prefixes",
 	Long:  ``,
-	Args:  cobra.MinimumNArgs(1),
+	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
 		recursive, err := cmd.Flags().GetBool("recursive")
 		if err != nil {

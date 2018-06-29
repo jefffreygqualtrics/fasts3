@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
+	"regexp"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -11,7 +13,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "cobra",
+	Use:   "fasts3",
 	Short: "A faster S3 utility",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -32,7 +34,7 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().Bool("version", false, "Show the version")
+	rootCmd.Flags().Bool("version", false, "Show the version")
 	rootCmd.PersistentFlags().StringVar(&keyRegex, "key-regex", "", "Regex filter for keys")
 	rootCmd.PersistentFlags().StringVar(&delimiter, "delimiter", "/", "Delimiter to use while listing")
 	rootCmd.PersistentFlags().IntVar(&searchDepth, "search-depth", 0, "Dictates how many prefix groups to walk down")
@@ -52,5 +54,27 @@ func Execute() {
 
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func validateS3URIs(pArgs ...cobra.PositionalArgs) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		for _, pArg := range pArgs {
+			err := pArg(cmd, args)
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, a := range args {
+			hasMatch, err := regexp.MatchString("^s3://", a)
+			if err != nil {
+				return err
+			}
+			if !hasMatch {
+				return fmt.Errorf("%s not a valid S3 uri, Please enter a valid S3 uri. Ex: s3://mary/had/a/little/lamb", a)
+			}
+		}
+		return nil
 	}
 }

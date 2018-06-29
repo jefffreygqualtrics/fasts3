@@ -13,7 +13,7 @@ var getCmd = &cobra.Command{
 	Use:   "get <S3 URIs>",
 	Short: "Download files from S3",
 	Long:  ``,
-	Args:  cobra.MinimumNArgs(1),
+	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
 		recursive, err := cmd.Flags().GetBool("recursive")
 		if err != nil {
@@ -33,7 +33,7 @@ var getCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	lsCmd.Flags().BoolP("recursive", "r", false, "Get all keys for this prefix")
+	getCmd.Flags().BoolP("recursive", "r", false, "Get all keys for this prefix")
 	getCmd.Flags().BoolP("skip-existing", "x", false, "Skips downloading keys which already exist on the local file system")
 }
 

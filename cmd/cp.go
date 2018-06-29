@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -13,10 +12,10 @@ import (
 
 // cpCmd represents the cp command
 var cpCmd = &cobra.Command{
-	Use:   "cp",
+	Use:   "cp <src> <dest>",
 	Short: "Copy files within S3",
 	Long:  ``,
-	Args:  cobra.MinimumNArgs(1),
+	Args:  validateS3URIs(cobra.ExactArgs(2)),
 	Run: func(cmd *cobra.Command, args []string) {
 		recursive, err := cmd.Flags().GetBool("recursive")
 		if err != nil {
@@ -38,11 +37,6 @@ var cpCmd = &cobra.Command{
 // the number of prefixes to list before parallelizing list calls, keyRegex is a regex filter on keys, when flat is
 // true it only takes the last part of the prefix as the filename.
 func Cp(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth int, keyRegex string, flat bool) error {
-	if len(s3Uris) != 2 {
-		fmt.Println("fasts3: error: must include one source and one destination URI")
-		os.Exit(1)
-	}
-
 	listCh, err := Ls(svc, []string{s3Uris[0]}, recurse, delimiter, searchDepth, keyRegex)
 	if err != nil {
 		return err

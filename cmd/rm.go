@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/spf13/cobra"
@@ -15,6 +14,7 @@ var rmCmd = &cobra.Command{
 	Use:   "rm <S3 URIs>",
 	Short: "Delete files within S3",
 	Long:  ``,
+	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("rm called")
 		recursive, err := cmd.Flags().GetBool("recursive")
@@ -22,8 +22,7 @@ var rmCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		if err := Rm(s3Client, args, recursive, delimiter, searchDepth, keyRegex); err != nil {
-			fmt.Fprintf(os.Stderr, "Encountered an error: %s\n", err)
-			return
+			log.Fatal(err)
 		}
 	},
 }
@@ -49,13 +48,4 @@ func init() {
 	rootCmd.AddCommand(rmCmd)
 
 	rmCmd.Flags().BoolP("recursive", "r", false, "Get all keys for this prefix")
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// rmCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// rmCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

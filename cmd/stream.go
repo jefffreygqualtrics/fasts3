@@ -14,6 +14,7 @@ import (
 var streamCmd = &cobra.Command{
 	Use:   "stream <S3 URIs>",
 	Short: "Stream the S3 objects contents to STDOUT",
+	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
 		includeKeyName, err := cmd.Flags().GetBool("include-key-name")
 		if err != nil {
