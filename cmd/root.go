@@ -50,7 +50,13 @@ func Execute() {
 	}
 	s3Client = s3.New(awsSession, aws.NewConfig())
 
-	if err := rootCmd.Execute(); err != nil {
+	cmd, err := rootCmd.ExecuteC()
+	if err != nil {
 		log.Fatal(err)
+	}
+
+	// execute the help if called with no child command
+	if cmd == rootCmd {
+		rootCmd.Help()
 	}
 }
