@@ -68,7 +68,7 @@ func (w *S3Wrapper) WithMaxConcurrency(maxConcurrency int) *S3Wrapper {
 }
 
 // ListAll is a convienience function for listing and collating all the results for multiple S3 URIs
-func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
+func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, keyRegex string) chan *ListOutput {
 	ch := make(chan *ListOutput, 10000)
 	var wg sync.WaitGroup
 	for _, s3Uri := range s3Uris {
@@ -89,14 +89,14 @@ func (w *S3Wrapper) ListAll(s3Uris []string, recursive bool, delimiter string, k
 }
 
 // List is a wrapping function to parallelize listings and normalize the results from the API
-func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRegex *string) chan *ListOutput {
+func (w *S3Wrapper) List(s3Uri string, recursive bool, delimiter string, keyRegex string) chan *ListOutput {
 	bucket, prefix := parseS3Uri(s3Uri)
 	if recursive {
 		delimiter = ""
 	}
 	var keyRegexFilter *regexp.Regexp
-	if keyRegex != nil {
-		keyRegexFilter = regexp.MustCompile(*keyRegex)
+	if keyRegex != "" {
+		keyRegexFilter = regexp.MustCompile(keyRegex)
 	}
 
 	params := &s3.ListObjectsV2Input{
