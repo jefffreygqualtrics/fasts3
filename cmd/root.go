@@ -21,6 +21,7 @@ var rootCmd = &cobra.Command{
 			versionCmd.Run(cmd, args)
 			return
 		}
+		cmd.Help()
 	},
 }
 
@@ -52,14 +53,8 @@ func Execute() {
 	}
 	s3Client = s3.New(awsSession, aws.NewConfig())
 
-	cmd, err := rootCmd.ExecuteC()
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
-	}
-
-	// execute the help if called with no child command
-	if cmd == rootCmd {
-		rootCmd.Help()
 	}
 }
 
