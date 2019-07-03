@@ -68,7 +68,8 @@ func (w *S3Wrapper) WithRegionFrom(uri string) (*S3Wrapper, error) {
 	bucket, _ := parseS3Uri(uri)
 	region, err := s3manager.GetBucketRegionWithClient(context.Background(), w.svc, bucket)
 	if err != nil {
-		return nil, err
+		log.Printf("WARN: unable to autodetect region, falling back to default. Cause: '%s'\n", err)
+		return w, nil
 	}
 	sess, err := session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable})
 	if err != nil {
