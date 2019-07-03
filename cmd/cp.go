@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/spf13/cobra"
-	"github.com/tuneinc/fasts3/s3wrapper"
+	"github.com/metaverse/fasts3/s3wrapper"
 )
 
 // cpCmd represents the cp command

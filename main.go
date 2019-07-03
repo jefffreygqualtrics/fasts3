@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/tuneinc/fasts3/cmd"
 	"log"
+
+	"github.com/metaverse/fasts3/cmd"
 )
 
 var (
