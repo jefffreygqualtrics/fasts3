@@ -16,7 +16,6 @@ var rmCmd = &cobra.Command{
 	Long:  ``,
 	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("rm called")
 		recursive, err := cmd.Flags().GetBool("recursive")
 		if err != nil {
 			log.Fatal(err)
