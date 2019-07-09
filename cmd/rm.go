@@ -5,8 +5,8 @@ import (
 	"log"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/metaverse/fasts3/s3wrapper"
 	"github.com/spf13/cobra"
-	"github.com/tuneinc/fasts3/s3wrapper"
 )
 
 // rmCmd represents the rm command
@@ -16,7 +16,6 @@ var rmCmd = &cobra.Command{
 	Long:  ``,
 	Args:  validateS3URIs(cobra.MinimumNArgs(1)),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("rm called")
 		recursive, err := cmd.Flags().GetBool("recursive")
 		if err != nil {
 			log.Fatal(err)
@@ -36,7 +35,11 @@ func Rm(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDepth
 		return err
 	}
 
-	wrap := s3wrapper.New(svc, maxParallel)
+	wrap, err := s3wrapper.New(svc, maxParallel).WithRegionFrom(s3Uris[0])
+	if err != nil {
+		return err
+	}
+
 	deleted := wrap.DeleteObjects(listCh)
 	for key := range deleted {
 		fmt.Printf("Deleted %s\n", key.FullKey)

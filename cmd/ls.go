@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	humanize "github.com/dustin/go-humanize"
+	"github.com/metaverse/fasts3/s3wrapper"
 	"github.com/spf13/cobra"
-	"github.com/tuneinc/fasts3/s3wrapper"
 )
 
 // lsCmd represents the ls command
@@ -63,7 +63,10 @@ var lsCmd = &cobra.Command{
 // under s3Uris, delimiter tells which character to use as the delimiter for listing prefixes, searchDepth determines how many prefixes to list
 // before parallelizing list calls, keyRegex is a regex filter on Keys
 func Ls(svc *s3.S3, s3Uris []string, recursive bool, delimiter string, searchDepth int, keyRegex string) (chan *s3wrapper.ListOutput, error) {
-	wrap := s3wrapper.New(svc, maxParallel)
+	wrap, err := s3wrapper.New(svc, maxParallel).WithRegionFrom(s3Uris[0])
+	if err != nil {
+		return nil, err
+	}
 	outChan := make(chan *s3wrapper.ListOutput, 10000)
 
 	slashRegex := regexp.MustCompile("/")

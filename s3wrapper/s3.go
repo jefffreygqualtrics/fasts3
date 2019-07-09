@@ -3,6 +3,7 @@ package s3wrapper
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -15,7 +16,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 // ListOutput represents the pruned and
@@ -59,6 +62,21 @@ func New(svc *s3.S3, maxParallel int) *S3Wrapper {
 		svc:                  svc,
 		concurrencySemaphore: make(chan struct{}, maxParallel),
 	}
+}
+
+func (w *S3Wrapper) WithRegionFrom(uri string) (*S3Wrapper, error) {
+	bucket, _ := parseS3Uri(uri)
+	region, err := s3manager.GetBucketRegionWithClient(context.Background(), w.svc, bucket)
+	if err != nil {
+		log.Printf("WARN: unable to autodetect region, falling back to default. Cause: '%s'\n", err)
+		return w, nil
+	}
+	sess, err := session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable})
+	if err != nil {
+		return nil, err
+	}
+	w.svc = s3.New(sess, aws.NewConfig().WithRegion(region))
+	return w, nil
 }
 
 // WithMaxConcurrency sets the maximum concurrency for the S3 operations

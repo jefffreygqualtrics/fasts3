@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/metaverse/fasts3/s3wrapper"
 	"github.com/spf13/cobra"
-	"github.com/tuneinc/fasts3/s3wrapper"
 )
 
 // streamCmd represents the stream command
@@ -67,7 +67,11 @@ func Stream(
 	if err != nil {
 		return err
 	}
-	wrap := s3wrapper.New(svc, maxParallel)
+	wrap, err := s3wrapper.New(svc, maxParallel).WithRegionFrom(s3Uris[0])
+	if err != nil {
+		return err
+	}
+
 	if ordered {
 		wrap.WithMaxConcurrency(1)
 	}

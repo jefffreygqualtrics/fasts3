@@ -4,8 +4,8 @@ import (
 	"log"
 
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/metaverse/fasts3/s3wrapper"
 	"github.com/spf13/cobra"
-	"github.com/tuneinc/fasts3/s3wrapper"
 )
 
 // getCmd represents the get command
@@ -49,7 +49,10 @@ func Get(svc *s3.S3, s3Uris []string, recurse bool, delimiter string, searchDept
 		return err
 	}
 
-	wrap := s3wrapper.New(svc, maxParallel)
+	wrap, err := s3wrapper.New(svc, maxParallel).WithRegionFrom(s3Uris[0])
+	if err != nil {
+		return err
+	}
 
 	downloadedFiles := wrap.GetAll(listCh, skipExisting)
 	for file := range downloadedFiles {
