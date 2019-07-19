@@ -440,17 +440,19 @@ func (w *S3Wrapper) DeleteObjects(keys chan *ListOutput) chan *ListOutput {
 				})
 				listOutCache = append(listOutCache, item)
 			}
-			// flush again for any remaining keys
-			params.Delete = &s3.Delete{
-				Objects: objects,
-			}
-			_, err := w.svc.DeleteObjects(params)
-			if err != nil {
-				panic(err)
-			}
+			if len(objects) > 0 {
+				// flush again for any remaining keys
+				params.Delete = &s3.Delete{
+					Objects: objects,
+				}
+				_, err := w.svc.DeleteObjects(params)
+				if err != nil {
+					panic(err)
+				}
 
-			for _, cacheItem := range listOutCache {
-				listOut <- cacheItem
+				for _, cacheItem := range listOutCache {
+					listOut <- cacheItem
+				}
 			}
 		}()
 	}
