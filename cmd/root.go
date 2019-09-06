@@ -28,10 +28,12 @@ var rootCmd = &cobra.Command{
 var (
 	s3Client *s3.S3
 
-	keyRegex    string
-	delimiter   string
-	searchDepth int
-	maxParallel int
+	keyRegex               string
+	delimiter              string
+	searchDepth            int
+	maxParallel            int
+	endpoint               string
+	usePathStyleAddressing bool
 )
 
 func init() {
@@ -40,22 +42,34 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&delimiter, "delimiter", "/", "Delimiter to use while listing")
 	rootCmd.PersistentFlags().IntVar(&searchDepth, "search-depth", 0, "Dictates how many prefix groups to walk down")
 	rootCmd.PersistentFlags().IntVarP(&maxParallel, "max-parallel", "p", 10, "Maximum number of calls to make to S3 simultaneously")
+	rootCmd.PersistentFlags().StringVar(&endpoint, "endpoint", "", "endpoint to make S3 requests against")
+	rootCmd.PersistentFlags().BoolVar(&usePathStyleAddressing, "path-style-addressing", false, "enables path-style addressing (deprecated in normal AWS environments)")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	awsSession, err := session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	s3Client = s3.New(awsSession, aws.NewConfig())
-
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func GetS3Client() *s3.S3 {
+	awsSession, err := session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	config := aws.NewConfig()
+	if endpoint != "" {
+		config = config.WithEndpoint(endpoint)
+	}
+	config = config.WithS3ForcePathStyle(usePathStyleAddressing)
+
+	return s3.New(awsSession, config)
 }
 
 func validateS3URIs(pArgs ...cobra.PositionalArgs) func(cmd *cobra.Command, args []string) error {

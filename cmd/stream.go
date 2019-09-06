@@ -30,7 +30,7 @@ var streamCmd = &cobra.Command{
 		}
 
 		err = Stream(
-			s3Client,
+			GetS3Client(),
 			args,
 			delimiter,
 			searchDepth,

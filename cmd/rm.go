@@ -20,7 +20,7 @@ var rmCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := Rm(s3Client, args, recursive, delimiter, searchDepth, keyRegex); err != nil {
+		if err := Rm(GetS3Client(), args, recursive, delimiter, searchDepth, keyRegex); err != nil {
 			log.Fatal(err)
 		}
 	},

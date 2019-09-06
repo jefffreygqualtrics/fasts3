@@ -34,7 +34,7 @@ var lsCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		listChan, err := Ls(s3Client, args, recursive, delimiter, searchDepth, keyRegex)
+		listChan, err := Ls(GetS3Client(), args, recursive, delimiter, searchDepth, keyRegex)
 		if err != nil {
 			log.Fatal(err)
 		}
