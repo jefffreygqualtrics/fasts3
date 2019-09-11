@@ -23,7 +23,7 @@ var getCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = Get(s3Client, args, recursive, delimiter, searchDepth, keyRegex, skipExisting)
+		err = Get(GetS3Client(), args, recursive, delimiter, searchDepth, keyRegex, skipExisting)
 		if err != nil {
 			log.Fatal(err)
 		}
